@@ -35,6 +35,11 @@ public class ArchName {
     }
 
     public static boolean is64() {
+        String name = System.getProperty("os.name");
+        if (name.indexOf("Windows") > -1 && System.getenv("LIB").endsWith("x86;")) {
+            return false;
+        }
+
         return "64".equals(System.getProperty("sun.arch.data.model"));
     }
 
@@ -52,6 +57,9 @@ public class ArchName {
             return arch + "-linux";
         }
         else if (name.indexOf("Windows") > -1) {
+            if (!is64()) {
+                return "x86-winnt";
+            }
             return arch + "-winnt";
         }
         else if (name.equals("SunOS")) {

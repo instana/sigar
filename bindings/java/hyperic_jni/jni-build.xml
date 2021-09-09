@@ -161,7 +161,7 @@
     <echo message="jni.src=${jni.src}, jni.jdk.os=${jni.jdk.os}, ${sun.arch.data.model}-bit"/>
 
     <javac srcdir="${jni.src.java}" destdir="${build}/classes" debug="true"
-           source="1.4" target="1.4"
+           source="1.8" target="1.8"
 	   includes="org/hyperic/jni/*.java"/>
 
     <taskdef name="libarch" classname="org.hyperic.jni.ArchNameTask">
@@ -463,6 +463,7 @@
                 libs="${jni.libset.libs}"/>
 
         <linkerarg value="/MACHINE:X64" if="jni.arch64"/>
+        <linkerarg value="/MACHINE:X86" if="jni.arch32"/>
         <linkerarg value="${jni.info.res}" if="jni.info.res"/>
         <syslibset libs="kernel32,user32,advapi32,ws2_32,netapi32,shell32,pdh,version"/>
       </linker>

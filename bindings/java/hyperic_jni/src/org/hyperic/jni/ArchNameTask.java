@@ -81,6 +81,7 @@ public class ArchNameTask extends Task {
             }
         }
         else {
+            getProject().setProperty("jni.arch32", "true");
             if (ArchLoader.IS_LINUX && osArch.equals("s390")) {
                 //gcc defaults to m64 on s390x platforms
                 getProject().setProperty("jni.gccm", "-m31");
