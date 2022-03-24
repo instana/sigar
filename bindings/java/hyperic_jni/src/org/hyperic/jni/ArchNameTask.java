@@ -92,11 +92,11 @@ public class ArchNameTask extends Task {
             //default to most recent SDK
             //MacOSX10.3.9.sdk, MacOSX10.4u.sdk, MacOSX10.5.sdk,etc.
             File[] sdks =
-                new File("/Developer/SDKs").listFiles(new FileFilter() {
+                new File("/Library/Developer/CommandLineTools/SDKs").listFiles(new FileFilter() {
                     public boolean accept(File file) {
                         String name = file.getName();
                         return
-                            name.startsWith("MacOSX10.") &&
+                            name.startsWith("MacOSX1") &&
                             name.endsWith(".sdk");
                     }
                 });
@@ -104,7 +104,7 @@ public class ArchNameTask extends Task {
                 Arrays.sort(sdks);
                 String prop = "uni.sdk";
                 String sdk = getProject().getProperty(prop);
-                String defaultMin = "10.3";
+                String defaultMin = "10.5";
 
                 if (sdk == null) {
                     int ix = sdks.length-1;
