@@ -224,37 +224,37 @@
     <antcall target="${jni.cc}" inheritRefs="true"/>
   </target>
 
-  <!-- run jni-cc twice {ppc,i386}, then feed both to lipo to build a universal binary -->
+  <!-- run jni-cc twice {arm64,i386}, then feed both to lipo to build a universal binary -->
   <target name="uni-cc" if="jni.libarch">
     <property name="shlib" value="${jni.objdir}/lib/lib${jni.libname}.dylib"/>
 
-    <!-- ppc -->
-    <echo message="build 'ppc' arch"/>
+    <!-- aarch64 -->
+    <echo message="build 'arm64' arch"/>
     <antcall target="jni-cc" inheritRefs="true">
-      <param name="uni.arch" value="ppc"/>
+      <param name="uni.arch" value="arm64"/>
     </antcall>
 
-    <copy file="${shlib}" tofile="${shlib}.ppc"/>
+    <copy file="${shlib}" tofile="${shlib}.arm64"/>
 
-    <!-- i386 -->
-    <echo message="build 'i386' arch"/>
+    <!-- x86_64 -->
+    <echo message="build 'x86_64' arch"/>
     <delete>
       <fileset dir="${jni.objdir}" includes="*.o"/>
     </delete>
 
     <antcall target="jni-cc" inheritRefs="true">
-      <param name="uni.arch" value="i386"/>
+      <param name="uni.arch" value="x86_64"/>
     </antcall>
 
-    <copy file="${shlib}" tofile="${shlib}.i386"/>
+    <copy file="${shlib}" tofile="${shlib}.x86_64"/>
 
-    <echo message="lipo 'ppc'+'i386'"/>
+    <echo message="lipo 'arm64'+'x86_64'"/>
     <exec executable="lipo">
-      <arg line="-create ${shlib}.ppc ${shlib}.i386 -output ${jni.objdir}/lib/lib${jni.libname}.dylib"/>
+      <arg line="-create ${shlib}.arm64 ${shlib}.x86_64 -output ${jni.objdir}/lib/lib${jni.libname}.dylib"/>
     </exec>
 
     <delete>
-      <fileset dir="${jni.objdir}/lib" includes="*.ppc,*.i386"/>
+      <fileset dir="${jni.objdir}/lib" includes="*.x86_64,*arm64"/>
     </delete>
   </target>
 
@@ -375,13 +375,14 @@
         <linkerarg value="-framework"/>
         <linkerarg value="CoreServices"/>
 
+        <linkerarg value="-framework"/>
+        <linkerarg value="IOKit"/>
+
         <linkerarg value="-sectcreate,__TEXT,__info_plist,${jni.info.plist}" if="jni.info.plist"/>
 
         <libset if="jni.libset.libs"
                 dir="${jni.libset.dir}"
                 libs="${jni.libset.libs}"/>
-
-        <syslibset libs="IOKit"/>
       </linker>
 
       <!-- Freebsd -->
