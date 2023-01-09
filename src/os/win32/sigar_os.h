@@ -43,7 +43,8 @@
 /* see apr/include/arch/win32/atime.h */
 #define EPOCH_DELTA INT64_C(11644473600000000)
 
-#define SIGAR_CMDLINE_MAX 4096<<2
+#define SIGAR_CMDLINE_MAX 16384
+#define SIGAR_ENV_KEY_MAX 32768
 
 /* XXX: support CP_UTF8 ? */
 
