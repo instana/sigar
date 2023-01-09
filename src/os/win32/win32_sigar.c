@@ -1521,7 +1521,7 @@ static int sigar_proc_env_parse(UCHAR *ptr, sigar_proc_env_t *procenv,
     while (*ptr) {
         char *val;
         int klen, vlen, status;
-        char key[128]; /* XXX is there a max key size? */
+        char key[SIGAR_ENV_MAX]; /* max size from msdn docs */
 
         if (*ptr == '=') {
             ptr += strlen(ptr)+1;
@@ -1576,7 +1576,7 @@ static int sigar_remote_proc_env_get(sigar_t *sigar, sigar_pid_t pid,
 {
     int status;
     HANDLE proc = open_process(pid);
-    WCHAR env[4096];
+    WCHAR env[SIGAR_ENV_MAX];
 
     if (!proc) {
         return GetLastError();
@@ -1589,7 +1589,7 @@ static int sigar_remote_proc_env_get(sigar_t *sigar, sigar_pid_t pid,
     if (status == SIGAR_OK) {
         LPBYTE ptr = (LPBYTE)env;
         DWORD size = sizeof(env);
-        UCHAR ent[4096];
+        UCHAR ent[SIGAR_ENV_MAX];
 
         while ((size > 0) && (*ptr != L'\0')) {
             DWORD len = (wcslen((LPWSTR)ptr) + 1) * sizeof(WCHAR);
@@ -1611,7 +1611,7 @@ SIGAR_DECLARE(int) sigar_proc_env_get(sigar_t *sigar, sigar_pid_t pid,
 {
     if (pid == sigar->pid) {
         if (procenv->type == SIGAR_PROC_ENV_KEY) {
-            char value[32767]; /* max size from msdn docs */
+            char value[SIGAR_ENV_MAX];
             DWORD retval = 
                 GetEnvironmentVariable(procenv->key, value, sizeof(value));
 
