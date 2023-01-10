@@ -19,7 +19,7 @@ IPv6 support on the official sigar-1.6 branch are incompatible with the Java wra
 We build patched Windows DLLs on a Windows Server 2016 10.0 node. The following tooling needs to be installed in order to build successfully:
 * Java 1.8 (we build using Azul Zulu 1.8)
 * Apache ant (we use Apache Ant(TM) version 1.10.11 compiled on July 10 2021)
-* Microsoft Visual Studio 2015 Community (required for ATL headers)
+* Microsoft Visual Studio 2015 Community from [here](https://go.microsoft.com/fwlink/?LinkId=615448&clcid=0x409) (required for ATL headers)
 * Perl for Windows (we use [Strawberry Perl](https://strawberryperl.com/))
 
 ### Build 32bit
