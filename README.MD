@@ -19,7 +19,9 @@ IPv6 support on the official sigar-1.6 branch are incompatible with the Java wra
 We build patched Windows DLLs on a Windows Server 2016 10.0 node. The following tooling needs to be installed in order to build successfully:
 * Java 1.8 (we build using Azul Zulu 1.8)
 * Apache ant (we use Apache Ant(TM) version 1.10.11 compiled on July 10 2021)
-* Microsoft Visual Studio 2015 Community from [here](https://go.microsoft.com/fwlink/?LinkId=615448&clcid=0x409) (required for ATL headers)
+* git
+* Microsoft Visual Studio 2015 Community from [here](https://go.microsoft.com/fwlink/?LinkId=615448&clcid=0x409) (required for ATL headers), ensure to install C++ language support
+* Microsoft Windows Software Development Kit (SDK) from [here](https://go.microsoft.com/fwlink/p/?LinkId=323507) (required for Resource Compiler, rc.exe, use Windows 8.1 SDK) See also: https://stackoverflow.com/questions/14372706/visual-studio-cant-build-due-to-rc-exe
 * Perl for Windows (we use [Strawberry Perl](https://strawberryperl.com/))
 
 ### Build 32bit
@@ -32,7 +34,7 @@ We build patched Windows DLLs on a Windows Server 2016 10.0 node. The following 
 
 ### Build 64bit
 
-* Open "Visual C++ x64 Native Build Tools Command Prompt" (defaults to 64bit compiler & linker settings)
+* Open "VS2015 x64 Native Tools Command Prompt" (defaults to 64bit compiler & linker settings)
 * export JAVA_HOME: `set JAVA_HOME=<your-java-install>`
 * change to `bindings\java`
 * run ant (no target required)
