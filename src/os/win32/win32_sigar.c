@@ -3541,7 +3541,9 @@ int sigar_os_sys_info_get(sigar_t *sigar,
     char *vendor_name, *vendor_version, *code_name=NULL;
 
     version.dwOSVersionInfoSize = sizeof(version);
-    GetVersionEx((OSVERSIONINFO *)&version); 
+    GetVersionEx((OSVERSIONINFO *)&version);
+
+    // see: https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-osversioninfoexa#remarks
 
     if (version.dwMajorVersion == 4) {
         vendor_name = "Windows NT";
@@ -3580,26 +3582,45 @@ int sigar_os_sys_info_get(sigar_t *sigar,
                 vendor_version = "7";
                 code_name = "Vienna";
             }
+        } else {
+            // not nt work station
+            if (version.dwMinorVersion == 0 || version.dwMinorVersion == 1) {
+                vendor_name = "Windows 2008";
+                vendor_version = "2008";
+                code_name = "Longhorn Server";
+            }
+            else if (version.dwMinorVersion == 2 || version.dwMinorVersion == 3) {
+                vendor_name = "Windows 2012";
+                vendor_version = "2012";
+                code_name = "Windows Server 8";
+            }
+            else {
+                // defaults
+                vendor_name = "Windows Unknown";
+                vendor_version = "2012";
+            }
         }
-	else {
-             // not nt work station
-             if (version.dwMinorVersion == 0 || version.dwMinorVersion ==1) {
-            	vendor_name = "Windows 2008";
-            	vendor_version = "2008";
-	        code_name = "Longhorn Server";
-             }
-	     else if (version.dwMinorVersion == 2 || version.dwMinorVersion == 3) {
- 	    	vendor_name = "Windows 2012";
-            	vendor_version = "2012";
-            	code_name = "Windows Server 8";
-	     }
-	     else {
-		// defaults
-		 vendor_name = "Windows Unknown";
-		 vendor_version = "2012";
-	     }
-	}
-
+    }
+    else if (version.dwMajorVersion == 10) {
+        if (version.sigar_wProductType == VER_NT_WORKSTATION) {
+            if (version.dwMinorVersion == 0) {
+                vendor_name = "Windows 10";
+                vendor_version = "10";
+                code_name = "Redstone";
+            }
+            else {
+                vendor_name = "Windows 2016";
+                vendor_version = "2016";
+                // Windows Server 2016 seem to not have a code name
+                // code_name = "";
+            }
+        }
+    }
+    else {
+        // should not be possible as of October 2023, but handle this case to prevent memory leaking, if vendor_name and vendor_version is not defined
+        // but still copied below
+        vendor_name = "Windows Unknown";
+        vendor_version = "unknown";
     }
 
     SIGAR_SSTRCPY(sysinfo->name, "Win32");
