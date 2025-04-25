@@ -569,7 +569,8 @@ int sigar_cpu_core_count(sigar_t *sigar)
             sigar_cpuid(1, &id);
 
             if (id.edx & (1<<28)) {
-                sigar->lcpu = (id.ebx & 0x00FF0000) >> 16;
+                unsigned int ht = (id.ebx & 0x00FF0000) >> 16;
+                sigar->lcpu = ht > 1 ? ht : 1;   // never let it drop to 0
             }
         }
 
