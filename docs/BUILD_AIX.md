@@ -81,14 +81,14 @@ ${CC} ${CFLAGS} -I../../../include -c aix_sigar.c -o aix_sigar.o
 
 # Compile common source files
 cd ../../
-${CC} ${CFLAGS} -I../../include -c sigar.c -o sigar.o
-${CC} ${CFLAGS} -I../../include -c sigar_cache.c -o sigar_cache.o
-${CC} ${CFLAGS} -I../../include -c sigar_fileinfo.c -o sigar_fileinfo.o
-${CC} ${CFLAGS} -I../../include -c sigar_format.c -o sigar_format.o
-${CC} ${CFLAGS} -I../../include -c sigar_getline.c -o sigar_getline.o
-${CC} ${CFLAGS} -I../../include -c sigar_ptql.c -o sigar_ptql.o
-${CC} ${CFLAGS} -I../../include -c sigar_signal.c -o sigar_signal.o
-${CC} ${CFLAGS} -I../../include -c sigar_util.c -o sigar_util.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar.c -o sigar.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar_cache.c -o sigar_cache.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar_fileinfo.c -o sigar_fileinfo.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar_format.c -o sigar_format.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar_getline.c -o sigar_getline.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar_ptql.c -o sigar_ptql.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar_signal.c -o sigar_signal.o
+${CC} ${CFLAGS} -I../../include -I../../src/os/aix -c sigar_util.c -o sigar_util.o
 ```
 
 #### Step 2: Link Shared Library
