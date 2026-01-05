@@ -105,8 +105,14 @@ ${CC} ${LDFLAGS} -o libsigar-ppc64-aix-5.so \
     sigar_signal.o \
     sigar_util.o \
     os/aix/aix_sigar.o \
-    -lperfstat -lodm -lcfg
+    -lperfstat -lodm -lcfg -lpthread
 ```
+
+**Required AIX Libraries:**
+- `libperfstat`: Performance statistics
+- `libodm`: Object Data Manager
+- `libcfg`: Configuration management
+- `libpthread`: POSIX threads support
 
 #### Step 3: Verify the Library
 

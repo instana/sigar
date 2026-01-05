@@ -46,7 +46,7 @@ $CC $LDFLAGS -o $BUILD_DIR/libsigar-ppc64-aix-5.so \
     $BUILD_DIR/sigar_signal.o \
     $BUILD_DIR/sigar_util.o \
     $BUILD_DIR/aix_sigar.o \
-    -lperfstat -lodm -lcfg
+    -lperfstat -lodm -lcfg -lpthread
 
 echo ""
 echo "Step 4: Verifying library..."
