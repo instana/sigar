@@ -439,7 +439,8 @@
         <syslibset libs="kvm"/>
       </linker>
 
-      <!-- AIX -->
+      <!-- AIX with xlc_r (IBM compiler) - COMMENTED OUT, using GCC instead -->
+      <!--
       <compiler name="xlc_r" if="aix">
         <compilerarg value="-q64" if="jni.arch64"/>
         <defineset>
@@ -455,6 +456,36 @@
         <libset if="jni.libset.libs"
                 dir="${jni.libset.dir}"
                 libs="${jni.libset.libs}"/>
+      </linker>
+      -->
+
+      <!-- AIX with GCC (alternative to xlc_r) -->
+      <compiler name="gcc" if="aix">
+        <compilerarg value="-O2" if="jni.optim"/>
+        <compilerarg value="-g" if="jni.debug"/>
+        <compilerarg value="-Wall"/>
+        <compilerarg value="-Werror" if="jni.werror"/>
+        <compilerarg value="-maix64" if="jni.arch64"/>
+        <compilerarg value="-fPIC"/>
+        <defineset>
+          <define name="${jni.define.name}_AIX"/>
+          <define name="_ALL_SOURCE"/>
+          <define name="_ANSI_C_SOURCE"/>
+          <define name="_POSIX_SOURCE"/>
+          <define name="_THREAD_SAFE"/>
+        </defineset>
+      </compiler>
+
+      <linker name="gcc" if="aix">
+        <linkerarg value="-maix64" if="jni.arch64"/>
+        <linkerarg value="-Wl,-brtl"/>
+        <linkerarg value="-Wl,-bexpall"/>
+        <linkerarg value="-Wl,-bnoentry"/>
+        <libset if="jni.libset.libs"
+                dir="${jni.libset.dir}"
+                libs="${jni.libset.libs}"/>
+        <!-- Force thread-safe C library -->
+        <syslibset libs="c_r"/>
       </linker>
 
       <!-- WIN32 -->

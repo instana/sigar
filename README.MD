@@ -40,3 +40,48 @@ We build patched Windows DLLs on a Windows Server 2016 10.0 node. The following 
 * run ant (no target required)
 * final `sigar-amd64-winnt.dll` & `sigar-amd64-winnt.lib` are in `bindings\java\sigar-bin\lib`
 
+## Building AIX ppc64 library
+
+We build the AIX library on AIX 7 using GCC. The resulting library is compatible with AIX 7.x systems.
+
+### Prerequisites
+
+* Java JDK 1.8 (we use the JVM from `/opt/instana-agent/jvm`)
+* Apache Ant
+* GCC compiler for AIX
+* Perl (for code generation)
+
+### Build Steps
+
+```bash
+cd bindings/java
+
+# Set environment
+export JAVA_HOME=/opt/instana-agent/jvm
+export CC=gcc
+export OBJECT_MODE=64
+
+# Clean and build
+ant clean
+ant build
+```
+
+### Build Output
+
+The library will be generated as `bindings/java/sigar-bin/lib/libsigar-ppc64-aix-7.so` (~364KB).
+
+**Note:** The library is named with `-7` (AIX version 7), but the Java wrapper expects `-5`. You must update the `ArchName.java` file in your application repository to map AIX 7 to version 5, or rename the library after building.
+
+### Verification
+
+```bash
+# Check file type (should be 64-bit XCOFF)
+file sigar-bin/lib/libsigar-ppc64-aix-7.so
+
+# Check for JNI symbols (should be 100+)
+dump -Tv sigar-bin/lib/libsigar-ppc64-aix-7.so | grep -c "Java_org_hyperic"
+
+# Check thread-safe library (should show libc_r.a)
+dump -H sigar-bin/lib/libsigar-ppc64-aix-7.so | grep "libc"
+```
+
