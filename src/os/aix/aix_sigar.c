@@ -1717,6 +1717,8 @@ sigar_tcp_get(sigar_t *sigar,
     tcp->retrans_segs = 0;
     tcp->in_errs = proto.u.tcp.ierrors;
     tcp->out_rsts = 0;
+
+    return SIGAR_OK;
 }
 
 #define NFS_V2_STAT_SET(type) \
