@@ -72,6 +72,16 @@ The library will be generated as `bindings/java/sigar-bin/lib/libsigar-ppc64-aix
 
 **Note:** The library is named with `-7` (AIX version 7), but the Java wrapper expects `-5`. You must update the `ArchName.java` file in your application repository to map AIX 7 to version 5, or rename the library after building.
 
+### AIX Portability Configuration
+
+The build uses special GCC linker flags to ensure maximum portability across different AIX systems:
+
+* **`-static-libgcc`**: Statically links the GCC runtime library into the `.so` file, eliminating the dependency on `libgcc_s.a`. This allows the library to work on AIX systems that don't have GCC installed or have different GCC versions.
+
+* **`-Wl,-blibpath:/usr/lib:/lib`**: Explicitly sets the library search path to only standard AIX system directories. Without this flag, GCC embeds its installation paths (e.g., `/opt/freeware/lib/gcc/powerpc-ibm-aix7.3.0.0/13/`) into the library, causing it to fail on systems with different GCC installations.
+
+These flags ensure the library depends only on standard AIX system libraries (`libc_r.a`, `libodm.a`, `libcfg.a`, `libperfstat.a`, `libpthreads.a`) and works across different AIX environments.
+
 ### Verification
 
 ```bash
@@ -83,5 +93,8 @@ dump -Tv sigar-bin/lib/libsigar-ppc64-aix-7.so | grep -c "Java_org_hyperic"
 
 # Check thread-safe library (should show libc_r.a)
 dump -H sigar-bin/lib/libsigar-ppc64-aix-7.so | grep "libc"
+
+# Verify portability (should show only /usr/lib:/lib path, no GCC paths)
+dump -X64 -H sigar-bin/lib/libsigar-ppc64-aix-7.so | grep -A 10 "Import File Strings"
 ```
 
