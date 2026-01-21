@@ -439,7 +439,8 @@
         <syslibset libs="kvm"/>
       </linker>
 
-      <!-- AIX -->
+      <!-- AIX with xlc_r (IBM compiler) - COMMENTED OUT, using GCC instead -->
+      <!--
       <compiler name="xlc_r" if="aix">
         <compilerarg value="-q64" if="jni.arch64"/>
         <defineset>
@@ -455,6 +456,44 @@
         <libset if="jni.libset.libs"
                 dir="${jni.libset.dir}"
                 libs="${jni.libset.libs}"/>
+      </linker>
+      -->
+
+      <!-- AIX with GCC (alternative to xlc_r) -->
+      <compiler name="gcc" if="aix">
+        <compilerarg value="-O2" if="jni.optim"/>
+        <compilerarg value="-g" if="jni.debug"/>
+        <compilerarg value="-Wall"/>
+        <compilerarg value="-Werror" if="jni.werror"/>
+        <compilerarg value="-maix64" if="jni.arch64"/>
+        <compilerarg value="-fPIC"/>
+        <defineset>
+          <define name="${jni.define.name}_AIX"/>
+          <define name="_ALL_SOURCE"/>
+          <define name="_ANSI_C_SOURCE"/>
+          <define name="_POSIX_SOURCE"/>
+          <define name="_THREAD_SAFE"/>
+        </defineset>
+      </compiler>
+
+      <linker name="gcc" if="aix">
+        <linkerarg value="-maix64" if="jni.arch64"/>
+        <!-- AIX Portability: Static link GCC runtime to avoid libgcc_s.a dependency on target systems.
+             This embeds the GCC runtime into the library, making it work on AIX systems without GCC installed.
+             Similar to Solaris configuration (line 311). -->
+        <linkerarg value="-static-libgcc"/>
+        <!-- AIX Portability: Set explicit library search path to only standard system directories.
+             Without this, GCC embeds its installation paths (e.g., /opt/freeware/lib/gcc/...) into the library,
+             causing failures on systems with different GCC versions or without GCC. -->
+        <linkerarg value="-Wl,-blibpath:/usr/lib:/lib"/>
+        <linkerarg value="-Wl,-brtl"/>
+        <linkerarg value="-Wl,-bexpall"/>
+        <linkerarg value="-Wl,-bnoentry"/>
+        <libset if="jni.libset.libs"
+                dir="${jni.libset.dir}"
+                libs="${jni.libset.libs}"/>
+        <!-- Force thread-safe C library -->
+        <syslibset libs="c_r"/>
       </linker>
 
       <!-- WIN32 -->

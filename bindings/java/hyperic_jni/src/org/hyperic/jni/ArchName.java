@@ -87,7 +87,7 @@ public class ArchName {
                 //v5 binary is compatible with v6
                 majorVersion = "5";
             }
-            //arch == "ppc" on 32-bit, "ppc64" on 64-bit 
+            //arch == "ppc" on 32-bit, "ppc64" on 64-bit
             return arch + "-aix-" + majorVersion;
         }
         else if (name.equals("Mac OS X") || name.equals("Darwin")) {

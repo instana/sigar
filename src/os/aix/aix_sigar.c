@@ -1165,30 +1165,39 @@ int sigar_file_system_list_get(sigar_t *sigar,
 
         if (fsp->type == SIGAR_FSTYPE_NETWORK) {
             char *hostname   = vmt2dataptr(ent, VMT_HOSTNAME);
-#if 0
-            /* XXX: these do not seem reliable */
-            int hostname_len = vmt2datasize(ent, VMT_HOSTNAME)-1; /* -1 == skip '\0' */
-            int devname_len  = vmt2datasize(ent, VMT_OBJECT);     /* includes '\0' */
-#else
-            int hostname_len = strlen(hostname);
-            int devname_len = strlen(devname) + 1;
-#endif
-            int total_len    = hostname_len + devname_len + 1;    /* 1 == strlen(":") */
-
-            if (total_len > sizeof(fsp->dev_name)) {
-                /* justincase - prevent overflow.  chances: slim..none */
+            
+            /* Check if hostname is NULL - some network filesystems (NFS v4, CIFS)
+             * may not populate VMT_HOSTNAME field on AIX */
+            if (hostname == NULL || *hostname == '\0') {
+                /* No hostname available, just use device name */
                 SIGAR_SSTRCPY(fsp->dev_name, devname);
             }
             else {
-                /* sprintf(fsp->devname, "%s:%s", hostname, devname) */
-                char *ptr = fsp->dev_name;
+#if 0
+                /* XXX: these do not seem reliable */
+                int hostname_len = vmt2datasize(ent, VMT_HOSTNAME)-1; /* -1 == skip '\0' */
+                int devname_len  = vmt2datasize(ent, VMT_OBJECT);     /* includes '\0' */
+#else
+                int hostname_len = strlen(hostname);
+                int devname_len = strlen(devname) + 1;
+#endif
+                int total_len    = hostname_len + devname_len + 1;    /* 1 == strlen(":") */
 
-                memcpy(ptr, hostname, hostname_len);
-                ptr += hostname_len;
+                if (total_len > sizeof(fsp->dev_name)) {
+                    /* justincase - prevent overflow.  chances: slim..none */
+                    SIGAR_SSTRCPY(fsp->dev_name, devname);
+                }
+                else {
+                    /* sprintf(fsp->devname, "%s:%s", hostname, devname) */
+                    char *ptr = fsp->dev_name;
 
-                *ptr++ = ':';
+                    memcpy(ptr, hostname, hostname_len);
+                    ptr += hostname_len;
 
-                memcpy(ptr, devname, devname_len);
+                    *ptr++ = ':';
+
+                    memcpy(ptr, devname, devname_len);
+                }
             }
         }
         else {
@@ -1708,6 +1717,8 @@ sigar_tcp_get(sigar_t *sigar,
     tcp->retrans_segs = 0;
     tcp->in_errs = proto.u.tcp.ierrors;
     tcp->out_rsts = 0;
+
+    return SIGAR_OK;
 }
 
 #define NFS_V2_STAT_SET(type) \
