@@ -857,7 +857,7 @@ int sigar_os_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
                            sigar_proc_args_t *procargs)
 {
     /* XXX if buffer is not large enough args are truncated */
-    char buffer[8192], *ptr;
+    char buffer[8192], *ptr, *end;
     struct procsinfo pinfo;
 
     pinfo.pi_pid = pid;
@@ -868,11 +868,27 @@ int sigar_os_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
         return errno;
     }
 
+    /* Ensure buffer is null-terminated to prevent overruns */
+    buffer[sizeof(buffer) - 1] = '\0';
+    
     ptr = buffer;
+    end = buffer + sizeof(buffer);
 
-    while (*ptr) {
+    while (*ptr && ptr < end) {
         int alen = strlen(ptr)+1;
-        char *arg = malloc(alen);
+        char *arg;
+        
+        /* Prevent buffer overrun */
+        if (ptr + alen > end) {
+            break;
+        }
+        
+        arg = malloc(alen);
+
+        if (arg == NULL) {
+            /* malloc failed - return error, caller will cleanup */
+            return ENOMEM;
+        }
 
         SIGAR_PROC_ARGS_GROW(procargs);
         memcpy(arg, ptr, alen);
@@ -889,7 +905,7 @@ int sigar_proc_env_get(sigar_t *sigar, sigar_pid_t pid,
                        sigar_proc_env_t *procenv)
 {
     /* XXX if buffer is not large enough args are truncated */
-    char buffer[8192], *ptr;
+    char buffer[8192], *ptr, *end;
     struct procsinfo pinfo;
 
     pinfo.pi_pid = pid;
@@ -900,9 +916,13 @@ int sigar_proc_env_get(sigar_t *sigar, sigar_pid_t pid,
         return errno;
     }
 
+    /* Ensure buffer is null-terminated to prevent overruns */
+    buffer[sizeof(buffer) - 1] = '\0';
+    
     ptr = buffer;
+    end = buffer + sizeof(buffer);
 
-    while (*ptr) {
+    while (*ptr && ptr < end) {
         char *val = strchr(ptr, '=');
         int klen, vlen, status;
         char key[128]; /* XXX is there a max key size? */
@@ -914,6 +934,12 @@ int sigar_proc_env_get(sigar_t *sigar, sigar_pid_t pid,
         }
 
         klen = val - ptr;
+        
+        /* Prevent buffer overrun in key copy */
+        if (klen >= sizeof(key)) {
+            klen = sizeof(key) - 1;
+        }
+        
         SIGAR_SSTRCPY(key, ptr);
         key[klen] = '\0';
         ++val;
@@ -928,6 +954,11 @@ int sigar_proc_env_get(sigar_t *sigar, sigar_pid_t pid,
         }
 
         ptr += (klen + 1 + vlen + 1);
+        
+        /* Prevent buffer overrun */
+        if (ptr >= end) {
+            break;
+        }
     }
 
     return SIGAR_OK;
@@ -979,6 +1010,10 @@ int sigar_proc_exe_get(sigar_t *sigar, sigar_pid_t pid,
     {
         return errno;
     }
+    
+    /* Ensure buffer is null-terminated */
+    buffer[sizeof(buffer) - 1] = '\0';
+    
     /* XXX argv[0] might be relative */
     len = strlen(buffer);
     SIGAR_SSTRCPY(procexe->name, buffer);
