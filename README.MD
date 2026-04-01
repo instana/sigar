@@ -40,6 +40,40 @@ We build patched Windows DLLs on a Windows Server 2016 10.0 node. The following 
 * run ant (no target required)
 * final `sigar-amd64-winnt.dll` & `sigar-amd64-winnt.lib` are in `bindings\java\sigar-bin\lib`
 
+## Building Linux amd64 library
+
+The Linux library is built inside a Docker container based on CentOS 7 to maximise compatibility. CentOS 7 uses **glibc 2.17** and **GCC 4.8.5**, so the resulting binary runs on any Linux with glibc ≥ 2.17 — covering RHEL/CentOS 7+, SLES 12+, Ubuntu 18.04+, and Debian 9+.
+
+### Prerequisites
+
+* Docker
+
+### Build Steps
+
+From the repository root:
+
+```bash
+docker build -f Dockerfile.linux-build -t sigar-linux-build .
+```
+
+### Copy the output
+
+```bash
+docker run --rm \
+  -v "$(pwd)":/output \
+  sigar-linux-build \
+  cp /build/sigar/bindings/java/sigar-bin/lib/libsigar-amd64-linux.so /output/
+```
+
+The file will appear at `libsigar-amd64-linux.so` in the project root.
+
+### Notes
+
+* CentOS 7 is EOL (June 2024). The Dockerfile redirects `yum` to `vault.centos.org` so package installation still works.
+* The build uses **OpenJDK 1.8** and **GCC 4.8.5** from the CentOS 7 vault.
+* The Ant target `build-jni` compiles only the native JNI shared library. To also build the Java `.jar`, use `ant build` instead.
+* `src/os/linux/linux_sigar.c` explicitly includes `<sys/sysmacros.h>` to ensure `major()`/`minor()` are available as macros on glibc 2.28+ (Debian 10, RHEL 8, etc.), where they were removed from `<sys/types.h>`.
+
 ## Building AIX ppc64 library
 
 We build the AIX library on AIX 7 using GCC. The resulting library is compatible with AIX 7.x systems.

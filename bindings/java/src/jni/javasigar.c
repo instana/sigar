@@ -434,12 +434,20 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
         JENV->GetFieldID(env, cls, "type", "I");
 
     fsarray = JENV->NewObjectArray(env, fslist.number, cls, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_file_system_list_destroy(sigar, &fslist);
+        return NULL;
+    }
 
     for (i=0; i<fslist.number; i++) {
         sigar_file_system_t *fs = &(fslist.data)[i];
         jobject fsobj;
         jclass obj_cls;
+
+        if (JENV->PushLocalFrame(env, 16) < 0) {
+            sigar_file_system_list_destroy(sigar, &fslist);
+            return NULL;
+        }
 
 #ifdef WIN32
         obj_cls = cls;
@@ -459,7 +467,11 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
 #endif
 
         fsobj = JENV->AllocObject(env, obj_cls);
-        SIGAR_CHEX;
+        if (JENV->ExceptionCheck(env)) {
+            JENV->PopLocalFrame(env, NULL);
+            sigar_file_system_list_destroy(sigar, &fslist);
+            return NULL;
+        }
 
         JENV->SetStringField(env, fsobj,
                              ids[FS_FIELD_DIRNAME],
@@ -486,7 +498,11 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
                           fs->type);
 
         JENV->SetObjectArrayElement(env, fsarray, i, fsobj);
-        SIGAR_CHEX;
+        JENV->PopLocalFrame(env, NULL);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_file_system_list_destroy(sigar, &fslist);
+            return NULL;
+        }
     }
 
     sigar_file_system_list_destroy(sigar, &fslist);
@@ -551,15 +567,31 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getCpuInfoList)
     JAVA_SIGAR_INIT_FIELDS_CPUINFO(cls);
 
     cpuarray = JENV->NewObjectArray(env, cpu_infos.number, cls, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_cpu_info_list_destroy(sigar, &cpu_infos);
+        return NULL;
+    }
 
     for (i=0; i<cpu_infos.number; i++) {
-        jobject info_obj = JENV->AllocObject(env, cls);
-        SIGAR_CHEX;
+        jobject info_obj;
+        if (JENV->PushLocalFrame(env, 16) < 0) {
+            sigar_cpu_info_list_destroy(sigar, &cpu_infos);
+            return NULL;
+        }
+        info_obj = JENV->AllocObject(env, cls);
+        if (JENV->ExceptionCheck(env)) {
+            JENV->PopLocalFrame(env, NULL);
+            sigar_cpu_info_list_destroy(sigar, &cpu_infos);
+            return NULL;
+        }
         JAVA_SIGAR_SET_FIELDS_CPUINFO(cls, info_obj,
                                       cpu_infos.data[i]);
         JENV->SetObjectArrayElement(env, cpuarray, i, info_obj);
-        SIGAR_CHEX;
+        JENV->PopLocalFrame(env, NULL);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_cpu_info_list_destroy(sigar, &cpu_infos);
+            return NULL;
+        }
     }
 
     sigar_cpu_info_list_destroy(sigar, &cpu_infos);
@@ -585,15 +617,31 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getCpuListNative)
     JAVA_SIGAR_INIT_FIELDS_CPU(cls);
 
     cpuarray = JENV->NewObjectArray(env, cpulist.number, cls, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_cpu_list_destroy(sigar, &cpulist);
+        return NULL;
+    }
 
     for (i=0; i<cpulist.number; i++) {
-        jobject info_obj = JENV->AllocObject(env, cls);
-        SIGAR_CHEX;
+        jobject info_obj;
+        if (JENV->PushLocalFrame(env, 16) < 0) {
+            sigar_cpu_list_destroy(sigar, &cpulist);
+            return NULL;
+        }
+        info_obj = JENV->AllocObject(env, cls);
+        if (JENV->ExceptionCheck(env)) {
+            JENV->PopLocalFrame(env, NULL);
+            sigar_cpu_list_destroy(sigar, &cpulist);
+            return NULL;
+        }
         JAVA_SIGAR_SET_FIELDS_CPU(cls, info_obj,
                                   cpulist.data[i]);
         JENV->SetObjectArrayElement(env, cpuarray, i, info_obj);
-        SIGAR_CHEX;
+        JENV->PopLocalFrame(env, NULL);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_cpu_list_destroy(sigar, &cpulist);
+            return NULL;
+        }
     }
 
     sigar_cpu_list_destroy(sigar, &cpulist);
@@ -630,7 +678,10 @@ JNIEXPORT jlongArray SIGAR_JNIx(getProcList)
     }
 
     procarray = JENV->NewLongArray(env, proclist.number);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_proc_list_destroy(sigar, &proclist);
+        return NULL;
+    }
 
     if (sizeof(jlong) == sizeof(sigar_pid_t)) {
         pids = (jlong *)proclist.data;
@@ -683,13 +734,24 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getProcArgs)
     }
 
     argsarray = JENV->NewObjectArray(env, procargs.number, stringclass, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_proc_args_destroy(sigar, &procargs);
+        return NULL;
+    }
 
-    for (i=0; i<procargs.number; i++) {	
-		
+    for (i=0; i<procargs.number; i++) {
+
 		jstring s = getProcArgStr(procargs.data[i], env);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_proc_args_destroy(sigar, &procargs);
+            return NULL;
+        }
         JENV->SetObjectArrayElement(env, argsarray, i, s);
-        SIGAR_CHEX;
+        JENV->DeleteLocalRef(env, s);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_proc_args_destroy(sigar, &procargs);
+            return NULL;
+        }
     }
 
     sigar_proc_args_destroy(sigar, &procargs);
@@ -709,10 +771,12 @@ static int jni_env_getall(void *data,
 {
     jni_env_put_t *put = (jni_env_put_t *)data;
     JNIEnv *env = put->env;
-
-    JENV->CallObjectMethod(env, put->map, put->id,  
-                           JENV->NewStringUTF(env, key),
-                           JENV->NewStringUTF(env, val));
+    jstring jkey = JENV->NewStringUTF(env, key);
+    jstring jval = JENV->NewStringUTF(env, val);
+    jobject prev = JENV->CallObjectMethod(env, put->map, put->id, jkey, jval);
+    JENV->DeleteLocalRef(env, jkey);
+    JENV->DeleteLocalRef(env, jval);
+    if (prev) JENV->DeleteLocalRef(env, prev);
 
     return JENV->ExceptionCheck(env) ? !SIGAR_OK : SIGAR_OK;
 }
@@ -876,14 +940,30 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getNetRouteList)
     JAVA_SIGAR_INIT_FIELDS_NETROUTE(cls);
 
     routearray = JENV->NewObjectArray(env, routelist.number, cls, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_net_route_list_destroy(sigar, &routelist);
+        return NULL;
+    }
 
     for (i=0; i<routelist.number; i++) {
-        jobject obj = JENV->AllocObject(env, cls);
-        SIGAR_CHEX;
+        jobject obj;
+        if (JENV->PushLocalFrame(env, 16) < 0) {
+            sigar_net_route_list_destroy(sigar, &routelist);
+            return NULL;
+        }
+        obj = JENV->AllocObject(env, cls);
+        if (JENV->ExceptionCheck(env)) {
+            JENV->PopLocalFrame(env, NULL);
+            sigar_net_route_list_destroy(sigar, &routelist);
+            return NULL;
+        }
         JAVA_SIGAR_SET_FIELDS_NETROUTE(cls, obj, routelist.data[i]);
         JENV->SetObjectArrayElement(env, routearray, i, obj);
-        SIGAR_CHEX;
+        JENV->PopLocalFrame(env, NULL);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_net_route_list_destroy(sigar, &routelist);
+            return NULL;
+        }
     }
 
     sigar_net_route_list_destroy(sigar, &routelist);
@@ -919,14 +999,30 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getNetConnectionList)
     JAVA_SIGAR_INIT_FIELDS_NETCONNECTION(cls);
 
     connarray = JENV->NewObjectArray(env, connlist.number, cls, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_net_connection_list_destroy(sigar, &connlist);
+        return NULL;
+    }
 
     for (i=0; i<connlist.number; i++) {
-        jobject obj = JENV->AllocObject(env, cls);
-        SIGAR_CHEX;
+        jobject obj;
+        if (JENV->PushLocalFrame(env, 16) < 0) {
+            sigar_net_connection_list_destroy(sigar, &connlist);
+            return NULL;
+        }
+        obj = JENV->AllocObject(env, cls);
+        if (JENV->ExceptionCheck(env)) {
+            JENV->PopLocalFrame(env, NULL);
+            sigar_net_connection_list_destroy(sigar, &connlist);
+            return NULL;
+        }
         JAVA_SIGAR_SET_FIELDS_NETCONNECTION(cls, obj, connlist.data[i]);
         JENV->SetObjectArrayElement(env, connarray, i, obj);
-        SIGAR_CHEX;
+        JENV->PopLocalFrame(env, NULL);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_net_connection_list_destroy(sigar, &connlist);
+            return NULL;
+        }
     }
 
     sigar_net_connection_list_destroy(sigar, &connlist);
@@ -1080,15 +1176,31 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getWhoList)
     JAVA_SIGAR_INIT_FIELDS_WHO(cls);
 
     whoarray = JENV->NewObjectArray(env, wholist.number, cls, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_who_list_destroy(sigar, &wholist);
+        return NULL;
+    }
 
     for (i=0; i<wholist.number; i++) {
-        jobject info_obj = JENV->AllocObject(env, cls);
-        SIGAR_CHEX;
+        jobject info_obj;
+        if (JENV->PushLocalFrame(env, 16) < 0) {
+            sigar_who_list_destroy(sigar, &wholist);
+            return NULL;
+        }
+        info_obj = JENV->AllocObject(env, cls);
+        if (JENV->ExceptionCheck(env)) {
+            JENV->PopLocalFrame(env, NULL);
+            sigar_who_list_destroy(sigar, &wholist);
+            return NULL;
+        }
         JAVA_SIGAR_SET_FIELDS_WHO(cls, info_obj,
                                   wholist.data[i]);
         JENV->SetObjectArrayElement(env, whoarray, i, info_obj);
-        SIGAR_CHEX;
+        JENV->PopLocalFrame(env, NULL);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_who_list_destroy(sigar, &wholist);
+            return NULL;
+        }
     }
 
     sigar_who_list_destroy(sigar, &wholist);
@@ -1185,12 +1297,23 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getNetInterfaceList)
     }
 
     ifarray = JENV->NewObjectArray(env, iflist.number, stringclass, 0);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_net_interface_list_destroy(sigar, &iflist);
+        return NULL;
+    }
 
     for (i=0; i<iflist.number; i++) {
         jstring s = JENV->NewStringUTF(env, iflist.data[i]);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_net_interface_list_destroy(sigar, &iflist);
+            return NULL;
+        }
         JENV->SetObjectArrayElement(env, ifarray, i, s);
-        SIGAR_CHEX;
+        JENV->DeleteLocalRef(env, s);
+        if (JENV->ExceptionCheck(env)) {
+            sigar_net_interface_list_destroy(sigar, &iflist);
+            return NULL;
+        }
     }
 
     sigar_net_interface_list_destroy(sigar, &iflist);
@@ -1394,7 +1517,10 @@ JNIEXPORT jlongArray SIGAR_JNI(ptql_SigarProcessQuery_find)
     }
 
     procarray = JENV->NewLongArray(env, proclist.number);
-    SIGAR_CHEX;
+    if (JENV->ExceptionCheck(env)) {
+        sigar_proc_list_destroy(sigar, &proclist);
+        return NULL;
+    }
 
     if (sizeof(jlong) == sizeof(sigar_pid_t)) {
         pids = (jlong *)proclist.data;

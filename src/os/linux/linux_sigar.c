@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <sys/param.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <sys/times.h>
 #include <sys/utsname.h>
 

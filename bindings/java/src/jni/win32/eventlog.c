@@ -398,6 +398,7 @@ JNIEXPORT void SIGAR_JNI(win32_EventLog_waitForChange)
         char buf[MAX_ERROR_LENGTH];
         sprintf(buf, "Error registering for event log to change: %d",
                 GetLastError());
+        CloseHandle(hEvent);
         win32_throw_exception(env, buf);
         return;
     }
@@ -407,9 +408,12 @@ JNIEXPORT void SIGAR_JNI(win32_EventLog_waitForChange)
         char buf[MAX_ERROR_LENGTH];
         sprintf(buf, "Error waiting for event log change: %d",
                 GetLastError());
+        CloseHandle(hEvent);
         win32_throw_exception(env, buf);
+        return;
     }
 
+    CloseHandle(hEvent);
     return;
 }
 #endif /* WIN32 */

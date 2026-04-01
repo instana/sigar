@@ -143,6 +143,7 @@ JNIEXPORT jlong SIGAR_JNI(win32_Service_CreateService)
             if ((ptr + len + 1) >=
                 (buffer + sizeof(buffer) / sizeof(TCHAR)))
             {
+                env->ReleaseStringChars(str, (const jchar *)chars);
                 break;
             }
 

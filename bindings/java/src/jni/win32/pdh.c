@@ -354,12 +354,13 @@ JNIEXPORT jobjectArray SIGAR_JNI(win32_Pdh_pdhGetInstances)
         /* Walk the return instance list, creating an array */
         for (cur_object = instance_list_buf, i = 0;
              *cur_object != 0;
-             i++) 
+             i++)
         {
             int len = lstrlen(cur_object);
             jstring s =
                 JENV->NewString(env, (const jchar *)cur_object, len);
             JENV->SetObjectArrayElement(env, array, i, s);
+            JENV->DeleteLocalRef(env, s);
             if (JENV->ExceptionCheck(env)) {
                 free(instance_list_buf);
                 return NULL;
@@ -367,7 +368,7 @@ JNIEXPORT jobjectArray SIGAR_JNI(win32_Pdh_pdhGetInstances)
             cur_object += len + 1;
         }
     } else {
-        if (instance_list_buf != NULL) 
+        if (instance_list_buf != NULL)
             free(instance_list_buf);
         
         // An error occured
@@ -435,12 +436,13 @@ JNIEXPORT jobjectArray SIGAR_JNI(win32_Pdh_pdhGetKeys)
         /* Walk the return instance list, creating an array */
         for (cur_object = instance_list_buf, i = 0;
              *cur_object != 0;
-             i++) 
+             i++)
         {
             int len = lstrlen(cur_object);
             jstring s =
                 JENV->NewString(env, (const jchar *)cur_object, len);
             JENV->SetObjectArrayElement(env, array, i, s);
+            JENV->DeleteLocalRef(env, s);
             if (JENV->ExceptionCheck(env)) {
                 free(instance_list_buf);
                 return NULL;
@@ -510,12 +512,13 @@ JNIEXPORT jobjectArray SIGAR_JNI(win32_Pdh_pdhGetObjects)
 
     for (cur_object = list_buf, i = 0;
          *cur_object != 0;
-         i++) 
+         i++)
     {
         int len = lstrlen(cur_object);
         jstring s =
             JENV->NewString(env, (const jchar *)cur_object, len);
         JENV->SetObjectArrayElement(env, array, i, s);
+        JENV->DeleteLocalRef(env, s);
         if (JENV->ExceptionCheck(env)) {
             free(list_buf);
             return NULL;
