@@ -42,7 +42,11 @@ We build patched Windows DLLs on a Windows Server 2016 10.0 node. The following 
 
 ## Building Linux amd64 library
 
-The Linux library is built inside a Docker container based on CentOS 7 to maximise compatibility. CentOS 7 uses **glibc 2.17** and **GCC 4.8.5**, so the resulting binary runs on any Linux with glibc ≥ 2.17 — covering RHEL/CentOS 7+, SLES 12+, Ubuntu 18.04+, and Debian 9+.
+Note:
+To maximize cross-distribution compatibility, the Linux library is deliberately compiled in a CentOS 7-based container. This build environment supplies glibc 2.17, establishing it as the minimum supported version. Binaries built against this older glibc remain compatible with any system running glibc ≥  2.17.
+
+This approach provides broad distribution support, covering RHEL/CentOS ≥  7, SLES ≥  12, Ubuntu ≥  18.04, and Debian ≥  9.
+The CentOS 7 build environment is a strategic compatibility decision: using newer build systems would increase the minimum glibc requirement and limit portability. Maintaining the CentOS 7 base ensures stable, long-term binary compatibility across platforms.
 
 ### Prerequisites
 
@@ -52,13 +56,13 @@ The Linux library is built inside a Docker container based on CentOS 7 to maximi
 
 From the repository root:
 
-```bash
+```shell
 docker build -f Dockerfile.linux-build -t sigar-linux-build .
 ```
 
 ### Copy the output
 
-```bash
+```shell
 docker run --rm \
   -v "$(pwd)":/output \
   sigar-linux-build \
@@ -77,6 +81,7 @@ The file will appear at `libsigar-amd64-linux.so` in the project root.
 ## Building AIX ppc64 library
 
 We build the AIX library on AIX 7 using GCC. The resulting library is compatible with AIX 7.x systems.
+For a detailed example how to compile it step-by-step see the [AIX build guide](./docs/AIX_BUILD_GUIDE.md).
 
 ### Prerequisites
 
@@ -87,7 +92,7 @@ We build the AIX library on AIX 7 using GCC. The resulting library is compatible
 
 ### Build Steps
 
-```bash
+```shell
 cd bindings/java
 
 # Set environment
@@ -118,7 +123,7 @@ These flags ensure the library depends only on standard AIX system libraries (`l
 
 ### Verification
 
-```bash
+```shell
 # Check file type (should be 64-bit XCOFF)
 file sigar-bin/lib/libsigar-ppc64-aix-7.so
 
