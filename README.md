@@ -58,13 +58,13 @@ From the repository root:
 
 To build with Docker:
 ```shell
-docker build -f Dockerfile.linux --platform=linux/amd64 -t sigar-linux-build .
+docker build -f Containerfile.linux --platform=linux/amd64 -t sigar-linux-build .
 ```
 
 or if you prefer Podman:
 
 ```shell
-podman build -f Dockerfile.linux --platform=linux/amd64 -t sigar-linux-build .
+podman build -f Containerfile.linux --platform=linux/amd64 -t sigar-linux-build .
 ```
 
 ### Copy the output
