@@ -1,1 +1,18 @@
-libsigar-amd64-linux.so
+# Linux
+*.so
+*.so.*
+
+# macOS
+*.dylib
+*.dylib.*
+*.bundle
+.DS_Store
+
+# Windows
+*.dll
+*.exp
+
+# Other
+build/
+dist/
+out/

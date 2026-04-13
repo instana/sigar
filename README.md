@@ -50,22 +50,40 @@ The CentOS 7 build environment is a strategic compatibility decision: using newe
 
 ### Prerequisites
 
-* Docker
+* Container runtime, e.g. Docker or Podman
 
 ### Build Steps
 
 From the repository root:
 
+To build with Docker:
 ```shell
-docker build -f Dockerfile.linux-build -t sigar-linux-build .
+docker build -f Dockerfile.linux-build --platform=linux/amd64 -t sigar-linux-build .
+```
+
+or if you prefer Podman:
+
+```shell
+podman build -f Dockerfile.linux-build --platform=linux/amd64 -t sigar-linux-build .
 ```
 
 ### Copy the output
 
 ```shell
 docker run --rm \
+  --platform=linux/amd64 \
   -v "$(pwd)":/output \
   sigar-linux-build \
+  cp /build/sigar/bindings/java/sigar-bin/lib/libsigar-amd64-linux.so /output/
+```
+
+or if you prefer Podman:
+
+```shell
+podman run --rm \
+  --platform=linux/amd64 \
+  -v "$(pwd)":/output \
+  localhost/sigar-linux-build \
   cp /build/sigar/bindings/java/sigar-bin/lib/libsigar-amd64-linux.so /output/
 ```
 
