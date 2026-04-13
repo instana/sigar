@@ -58,13 +58,13 @@ From the repository root:
 
 To build with Docker:
 ```shell
-docker build -f Dockerfile.linux-build --platform=linux/amd64 -t sigar-linux-build .
+docker build -f Dockerfile.linux --platform=linux/amd64 -t sigar-linux-build .
 ```
 
 or if you prefer Podman:
 
 ```shell
-podman build -f Dockerfile.linux-build --platform=linux/amd64 -t sigar-linux-build .
+podman build -f Dockerfile.linux --platform=linux/amd64 -t sigar-linux-build .
 ```
 
 ### Copy the output
@@ -103,10 +103,10 @@ For a detailed example how to compile it step-by-step see the [AIX build guide](
 
 ### Prerequisites
 
-* Java JDK 1.8 (we use the JVM from `/opt/instana-agent/jvm`)
-* Apache Ant
-* GCC compiler for AIX
-* Perl (for code generation)
+* Java JDK 1.8, e.g. preinstalled version in /usr/java8_64/bin/javac
+* Apache Ant, e.g. [ant 1.10.14](https://archive.apache.org/dist/ant/binaries/apache-ant-1.10.14-bin.tar.gz)
+* GCC compiler for AIX, e.g. 13.3.0 (dnf can be obtained from the [AIX Toolbox for Open Source Software](https://www.ibm.com/support/pages/aix-toolbox-open-source-software-get-started))
+* Perl (for code generation), e.g. v5.28.1
 
 ### Build Steps
 
