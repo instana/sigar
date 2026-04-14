@@ -1,0 +1,30 @@
+FROM centos:7
+
+# CentOS 7 is EOL — redirect yum to the vault mirror
+RUN sed -i \
+    -e 's|^mirrorlist=|#mirrorlist=|g' \
+    -e 's|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' \
+    /etc/yum.repos.d/CentOS-*.repo
+
+RUN yum install -y \
+    gcc \
+    make \
+    ant \
+    java-1.8.0-openjdk-devel \
+    perl \
+    && yum clean all
+
+# Determine JAVA_HOME from the installed JDK
+RUN echo "export JAVA_HOME=$(dirname $(dirname $(readlink -f /usr/bin/javac)))" \
+    >> /etc/profile.d/java.sh
+ENV JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
+
+WORKDIR /build/sigar
+
+COPY . .
+
+WORKDIR /build/sigar/bindings/java
+
+RUN JAVA_HOME=$(dirname $(dirname $(readlink -f /usr/bin/javac))) ant build-jni
+
+RUN echo "Build output:" && ls sigar-bin/lib/

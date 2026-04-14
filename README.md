@@ -40,20 +40,77 @@ We build patched Windows DLLs on a Windows Server 2016 10.0 node. The following 
 * run ant (no target required)
 * final `sigar-amd64-winnt.dll` & `sigar-amd64-winnt.lib` are in `bindings\java\sigar-bin\lib`
 
-## Building AIX ppc64 library
+## Building Linux amd64 library
 
-We build the AIX library on AIX 7 using GCC. The resulting library is compatible with AIX 7.x systems.
+Note:
+To maximize cross-distribution compatibility, the Linux library is deliberately compiled in a CentOS 7-based container. This build environment supplies glibc 2.17, establishing it as the minimum supported version. Binaries built against this older glibc remain compatible with any system running glibc ≥  2.17.
+
+This approach provides broad distribution support, covering RHEL/CentOS ≥  7, SLES ≥  12, Ubuntu ≥  18.04, and Debian ≥  9.
+The CentOS 7 build environment is a strategic compatibility decision: using newer build systems would increase the minimum glibc requirement and limit portability. Maintaining the CentOS 7 base ensures stable, long-term binary compatibility across platforms.
 
 ### Prerequisites
 
-* Java JDK 1.8 (we use the JVM from `/opt/instana-agent/jvm`)
-* Apache Ant
-* GCC compiler for AIX
-* Perl (for code generation)
+* Container runtime, e.g. Docker or Podman
 
 ### Build Steps
 
-```bash
+From the repository root:
+
+To build with Docker:
+```shell
+docker build -f Containerfile.linux --platform=linux/amd64 -t sigar-linux-build .
+```
+
+or if you prefer Podman:
+
+```shell
+podman build -f Containerfile.linux --platform=linux/amd64 -t sigar-linux-build .
+```
+
+### Copy the output
+
+```shell
+docker run --rm \
+  --platform=linux/amd64 \
+  -v "$(pwd)":/output \
+  sigar-linux-build \
+  cp /build/sigar/bindings/java/sigar-bin/lib/libsigar-amd64-linux.so /output/
+```
+
+or if you prefer Podman:
+
+```shell
+podman run --rm \
+  --platform=linux/amd64 \
+  -v "$(pwd)":/output \
+  localhost/sigar-linux-build \
+  cp /build/sigar/bindings/java/sigar-bin/lib/libsigar-amd64-linux.so /output/
+```
+
+The file will appear at `libsigar-amd64-linux.so` in the project root.
+
+### Notes
+
+* CentOS 7 is EOL (June 2024). The Dockerfile redirects `yum` to `vault.centos.org` so package installation still works.
+* The build uses **OpenJDK 1.8** and **GCC 4.8.5** from the CentOS 7 vault.
+* The Ant target `build-jni` compiles only the native JNI shared library. To also build the Java `.jar`, use `ant build` instead.
+* `src/os/linux/linux_sigar.c` explicitly includes `<sys/sysmacros.h>` to ensure `major()`/`minor()` are available as macros on glibc 2.28+ (Debian 10, RHEL 8, etc.), where they were removed from `<sys/types.h>`.
+
+## Building AIX ppc64 library
+
+We build the AIX library on AIX 7 using GCC. The resulting library is compatible with AIX 7.x systems.
+For a detailed example how to compile it step-by-step see the [AIX build guide](./docs/AIX_BUILD_GUIDE.md).
+
+### Prerequisites
+
+* Java JDK 1.8, e.g. preinstalled version in /usr/java8_64/bin/javac
+* Apache Ant, e.g. [ant 1.10.14](https://archive.apache.org/dist/ant/binaries/apache-ant-1.10.14-bin.tar.gz)
+* GCC compiler for AIX, e.g. 13.3.0 (dnf can be obtained from the [AIX Toolbox for Open Source Software](https://www.ibm.com/support/pages/aix-toolbox-open-source-software-get-started))
+* Perl (for code generation), e.g. v5.28.1
+
+### Build Steps
+
+```shell
 cd bindings/java
 
 # Set environment
@@ -84,7 +141,7 @@ These flags ensure the library depends only on standard AIX system libraries (`l
 
 ### Verification
 
-```bash
+```shell
 # Check file type (should be 64-bit XCOFF)
 file sigar-bin/lib/libsigar-ppc64-aix-7.so
 
