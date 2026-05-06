@@ -1131,6 +1131,21 @@ int sigar_os_fs_type_get(sigar_file_system_t *fsp)
  */
 int mntctl(int command, int size, char *buffer);
 #endif
+/*
+ * Safe wrapper for vmt2dataptr that checks if the field is present.
+ * According to AIX documentation: "If a particular area has no data,
+ * offset and size should be 0."
+ *
+ * This prevents SIGSEGV when vmt_off is 0, which would cause vmt2dataptr
+ * to return a pointer to the vmount structure itself.
+ */
+static inline char* safe_vmt2dataptr(struct vmount *vmt, int idx) {
+    if (vmt->vmt_data[idx].vmt_off == 0 || vmt->vmt_data[idx].vmt_size == 0) {
+        return NULL;
+    }
+    return vmt2dataptr(vmt, idx);
+}
+
 
 int sigar_file_system_list_get(sigar_t *sigar,
                                sigar_file_system_list_t *fslist)
@@ -1193,13 +1208,28 @@ int sigar_file_system_list_get(sigar_t *sigar,
             }
         }
 
-        SIGAR_SSTRCPY(fsp->dir_name, vmt2dataptr(ent, VMT_STUB));
-        SIGAR_SSTRCPY(fsp->options, vmt2dataptr(ent, VMT_ARGS));
+        char *dir_name = safe_vmt2dataptr(ent, VMT_STUB);
+        char *options = safe_vmt2dataptr(ent, VMT_ARGS);
+
+        if (dir_name != NULL) {
+            SIGAR_SSTRCPY(fsp->dir_name, dir_name);
+        } else {
+            fsp->dir_name[0] = '\0';
+        }
         
-        devname = vmt2dataptr(ent, VMT_OBJECT);
+        if (options != NULL) {
+            SIGAR_SSTRCPY(fsp->options, options);
+        } else {
+            fsp->options[0] = '\0';
+        }
+
+        devname = safe_vmt2dataptr(ent, VMT_OBJECT);
+        if (devname == NULL) {
+            devname = "";
+        }
 
         if (fsp->type == SIGAR_FSTYPE_NETWORK) {
-            char *hostname   = vmt2dataptr(ent, VMT_HOSTNAME);
+            char *hostname   = safe_vmt2dataptr(ent, VMT_HOSTNAME);
             
             /* Check if hostname is NULL - some network filesystems (NFS v4, CIFS)
              * may not populate VMT_HOSTNAME field on AIX */
