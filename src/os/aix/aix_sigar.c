@@ -1144,41 +1144,51 @@ int mntctl(int command, int size, char *buffer);
  * Also validates that idx is within valid range and that the data pointer
  * would not exceed the vmount structure boundaries.
  */
-static inline char* safe_vmt2dataptr(struct vmount *vmt, int idx, sigar_t *sigar) {
-    /* Validate index is within bounds - vmt_data array size is limited */
+static inline char* safe_vmt2dataptr(struct vmount *vmt, int idx) {
+    FILE *debug_log = NULL;
+    
+    /* Array bounds check: VMT_LASTINDEX is 5, so valid indices are 0-5 */
     if (idx < 0 || idx >= sizeof(vmt->vmt_data) / sizeof(vmt->vmt_data[0])) {
-        if (SIGAR_LOG_IS_DEBUG(sigar)) {
-            sigar_log_printf(sigar, SIGAR_LOG_DEBUG,
-                           "[fs_list] safe_vmt2dataptr: idx=%d out of bounds (max=%lu)",
-                           idx, sizeof(vmt->vmt_data) / sizeof(vmt->vmt_data[0]));
+        debug_log = fopen("/tmp/sigar_debug.log", "a");
+        if (debug_log) {
+            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d out of bounds (max=%lu)\n",
+                   time(NULL), idx, sizeof(vmt->vmt_data) / sizeof(vmt->vmt_data[0]) - 1);
+            fclose(debug_log);
         }
         return NULL;
     }
     
-    /* Check if field has data */
+    /* Check if field is empty (offset or size is 0) */
     if (vmt->vmt_data[idx].vmt_off == 0 || vmt->vmt_data[idx].vmt_size == 0) {
-        if (SIGAR_LOG_IS_DEBUG(sigar)) {
-            sigar_log_printf(sigar, SIGAR_LOG_DEBUG,
-                           "[fs_list] safe_vmt2dataptr: idx=%d empty (off=%d, size=%d)",
-                           idx, vmt->vmt_data[idx].vmt_off, vmt->vmt_data[idx].vmt_size);
+        debug_log = fopen("/tmp/sigar_debug.log", "a");
+        if (debug_log) {
+            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d empty (off=%d, size=%d)\n",
+                   time(NULL), idx, vmt->vmt_data[idx].vmt_off, vmt->vmt_data[idx].vmt_size);
+            fclose(debug_log);
         }
         return NULL;
     }
     
-    /* Validate offset is within the vmount structure length */
+    /* Validate offset is within vmt_length */
     if (vmt->vmt_data[idx].vmt_off >= vmt->vmt_length) {
-        sigar_log_printf(sigar, SIGAR_LOG_WARN,
-                       "[fs_list] safe_vmt2dataptr: idx=%d invalid offset (off=%d >= vmt_length=%d)",
-                       idx, vmt->vmt_data[idx].vmt_off, vmt->vmt_length);
+        debug_log = fopen("/tmp/sigar_debug.log", "a");
+        if (debug_log) {
+            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d invalid offset (off=%d >= vmt_length=%d)\n",
+                   time(NULL), idx, vmt->vmt_data[idx].vmt_off, vmt->vmt_length);
+            fclose(debug_log);
+        }
         return NULL;
     }
     
-    /* Validate that size doesn't exceed remaining space (prevents integer overflow) */
+    /* Overflow-safe size check: ensure size doesn't exceed remaining buffer */
     if (vmt->vmt_data[idx].vmt_size > vmt->vmt_length - vmt->vmt_data[idx].vmt_off) {
-        sigar_log_printf(sigar, SIGAR_LOG_WARN,
-                       "[fs_list] safe_vmt2dataptr: idx=%d size overflow (size=%d > remaining=%d)",
-                       idx, vmt->vmt_data[idx].vmt_size,
-                       vmt->vmt_length - vmt->vmt_data[idx].vmt_off);
+        debug_log = fopen("/tmp/sigar_debug.log", "a");
+        if (debug_log) {
+            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d size overflow (size=%d > remaining=%d)\n",
+                   time(NULL), idx, vmt->vmt_data[idx].vmt_size,
+                   vmt->vmt_length - vmt->vmt_data[idx].vmt_off);
+            fclose(debug_log);
+        }
         return NULL;
     }
     
