@@ -1208,12 +1208,32 @@ static inline char *safe_vmt2dataptr(struct vmount *vmt, int idx)
     }
 
     /*
-     * Safe to compute the final pointer.
+     * Ensure the string is NUL-terminated within the declared size.
      *
-     * The returned pointer references data fully contained within
-     * the vmount structure according to vmt_length.
+     * AIX vmount API specifies that string fields are NUL-terminated
+     * and vmt_size includes the NUL byte. However, we validate this
+     * explicitly to protect against:
+     *   - Kernel bugs that violate the API contract
+     *   - Memory corruption in kernel space
+     *   - Malformed vmount structures
+     *
+     * Without this check, strlen() or strncpy() could read past the
+     * validated bounds and potentially SIGSEGV on unmapped memory.
+     *
+     * This is the final defense layer ensuring complete memory safety.
      */
-    return (char *)vmt + off;
+    char *ptr = (char *)vmt + off;
+    if (memchr(ptr, '\0', size) == NULL) {
+        return NULL;
+    }
+
+    /*
+     * Safe to return the pointer.
+     *
+     * The returned pointer references a NUL-terminated string fully
+     * contained within the vmount structure according to vmt_length.
+     */
+    return ptr;
 }
 
 
@@ -1230,7 +1250,7 @@ int sigar_file_system_list_get(sigar_t *sigar,
 
     mntlist = buf = malloc(size);
     if (buf == NULL) {
-        return errno;
+        return ENOMEM;
     }
     
     buf_end = buf + size;
@@ -1248,14 +1268,18 @@ int sigar_file_system_list_get(sigar_t *sigar,
         sigar_file_system_t *fsp;
         struct vmount *ent = (struct vmount *)mntlist;
         
-        /* Safety check: ensure we can read the vmount header */
-        if (mntlist + sizeof(struct vmount) > buf_end) {
+        /*
+         * Safety check: ensure we can read the vmount header.
+         */
+        if ((size_t)(buf_end - mntlist) < sizeof(struct vmount)) {
             break;
         }
         
-        /* Safety check: validate vmt_length before using it */
+        /*
+         * Safety check: validate vmt_length before using it.
+         */
         if (ent->vmt_length < sizeof(struct vmount) ||
-            mntlist + ent->vmt_length > buf_end) {
+            ent->vmt_length > (size_t)(buf_end - mntlist)) {
             break;
         }
 
