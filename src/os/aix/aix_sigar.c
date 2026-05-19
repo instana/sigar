@@ -1145,50 +1145,33 @@ int mntctl(int command, int size, char *buffer);
  * would not exceed the vmount structure boundaries.
  */
 static inline char* safe_vmt2dataptr(struct vmount *vmt, int idx) {
-    FILE *debug_log = NULL;
+    /* Validate vmount pointer */
+    if (vmt == NULL) {
+        return NULL;
+    }
+
+    /* Validate vmt_length is reasonable (minimum size check) */
+    if (vmt->vmt_length < sizeof(struct vmount)) {
+        return NULL;
+    }
     
     /* Array bounds check: VMT_LASTINDEX is 5, so valid indices are 0-5 */
     if (idx < 0 || idx >= sizeof(vmt->vmt_data) / sizeof(vmt->vmt_data[0])) {
-        debug_log = fopen("/tmp/sigar_debug.log", "a");
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d out of bounds (max=%lu)\n",
-                   time(NULL), idx, sizeof(vmt->vmt_data) / sizeof(vmt->vmt_data[0]) - 1);
-            fclose(debug_log);
-        }
         return NULL;
     }
     
     /* Check if field is empty (offset or size is 0) */
     if (vmt->vmt_data[idx].vmt_off == 0 || vmt->vmt_data[idx].vmt_size == 0) {
-        debug_log = fopen("/tmp/sigar_debug.log", "a");
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d empty (off=%d, size=%d)\n",
-                   time(NULL), idx, vmt->vmt_data[idx].vmt_off, vmt->vmt_data[idx].vmt_size);
-            fclose(debug_log);
-        }
         return NULL;
     }
     
     /* Validate offset is within vmt_length */
     if (vmt->vmt_data[idx].vmt_off >= vmt->vmt_length) {
-        debug_log = fopen("/tmp/sigar_debug.log", "a");
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d invalid offset (off=%d >= vmt_length=%d)\n",
-                   time(NULL), idx, vmt->vmt_data[idx].vmt_off, vmt->vmt_length);
-            fclose(debug_log);
-        }
         return NULL;
     }
     
     /* Overflow-safe size check: ensure size doesn't exceed remaining buffer */
     if (vmt->vmt_data[idx].vmt_size > vmt->vmt_length - vmt->vmt_data[idx].vmt_off) {
-        debug_log = fopen("/tmp/sigar_debug.log", "a");
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] safe_vmt2dataptr: idx=%d size overflow (size=%d > remaining=%d)\n",
-                   time(NULL), idx, vmt->vmt_data[idx].vmt_size,
-                   vmt->vmt_length - vmt->vmt_data[idx].vmt_off);
-            fclose(debug_log);
-        }
         return NULL;
     }
     
@@ -1221,60 +1204,24 @@ int sigar_file_system_list_get(sigar_t *sigar,
 
     sigar_file_system_list_create(fslist);
 
-    /* Open debug log once for entire function - better performance */
-    FILE *debug_log = fopen("/tmp/sigar_debug.log", "a");
-    if (debug_log) {
-        fprintf(debug_log, "[%ld] Starting filesystem list: num=%d, buf=%p, buf_end=%p, size=%d\n",
-                time(NULL), num, (void*)buf, (void*)buf_end, size);
-        fflush(debug_log);  /* Ensure written immediately */
-    }
-
     for (i=0; i<num; i++) {
         char *devname;
         const char *typename = NULL;
         sigar_file_system_t *fsp;
         struct vmount *ent = (struct vmount *)mntlist;
         
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: mntlist=%p, ent=%p\n",
-                    time(NULL), i, (void*)mntlist, (void*)ent);
-            fflush(debug_log);
-        }
-        
         /* Safety check: ensure we can read the vmount header */
         if (mntlist + sizeof(struct vmount) > buf_end) {
-            if (debug_log) {
-                fprintf(debug_log, "[%ld] Entry %d: BREAK - header beyond buffer\n",
-                        time(NULL), i);
-                fflush(debug_log);
-            }
             break;
-        }
-        
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: vmt_length=%d, vmt_gfstype=%d, vmt_flags=0x%x\n",
-                    time(NULL), i, ent->vmt_length, ent->vmt_gfstype, ent->vmt_flags);
-            fflush(debug_log);
         }
         
         /* Safety check: validate vmt_length before using it */
         if (ent->vmt_length < sizeof(struct vmount) ||
             mntlist + ent->vmt_length > buf_end) {
-            if (debug_log) {
-                fprintf(debug_log, "[%ld] Entry %d: BREAK - invalid vmt_length=%d (min=%lu)\n",
-                        time(NULL), i, ent->vmt_length, sizeof(struct vmount));
-                fflush(debug_log);
-            }
             break;
         }
 
         mntlist += ent->vmt_length;
-        
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: Advanced mntlist to %p\n",
-                    time(NULL), i, (void*)mntlist);
-            fflush(debug_log);
-        }
 
         SIGAR_FILE_SYSTEM_LIST_GROW(fslist);
 
@@ -1309,27 +1256,8 @@ int sigar_file_system_list_get(sigar_t *sigar,
             }
         }
 
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: Accessing VMT_STUB\n", time(NULL), i);
-            fflush(debug_log);
-        }
         char *dir_name = safe_vmt2dataptr(ent, VMT_STUB);
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: VMT_STUB=%s\n",
-                    time(NULL), i, dir_name ? dir_name : "NULL");
-            fflush(debug_log);
-        }
-
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: Accessing VMT_ARGS\n", time(NULL), i);
-            fflush(debug_log);
-        }
         char *options = safe_vmt2dataptr(ent, VMT_ARGS);
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: VMT_ARGS=%s\n",
-                    time(NULL), i, options ? options : "NULL");
-            fflush(debug_log);
-        }
 
         if (dir_name != NULL) {
             SIGAR_SSTRCPY(fsp->dir_name, dir_name);
@@ -1343,32 +1271,13 @@ int sigar_file_system_list_get(sigar_t *sigar,
             fsp->options[0] = '\0';
         }
 
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: Accessing VMT_OBJECT\n", time(NULL), i);
-            fflush(debug_log);
-        }
         devname = safe_vmt2dataptr(ent, VMT_OBJECT);
-        if (debug_log) {
-            fprintf(debug_log, "[%ld] Entry %d: VMT_OBJECT=%s\n",
-                    time(NULL), i, devname ? devname : "NULL");
-            fflush(debug_log);
-        }
         if (devname == NULL) {
             devname = "";
         }
 
         if (fsp->type == SIGAR_FSTYPE_NETWORK) {
-            if (debug_log) {
-                fprintf(debug_log, "[%ld] Entry %d: Network FS - Accessing VMT_HOSTNAME\n",
-                        time(NULL), i);
-                fflush(debug_log);
-            }
             char *hostname   = safe_vmt2dataptr(ent, VMT_HOSTNAME);
-            if (debug_log) {
-                fprintf(debug_log, "[%ld] Entry %d: VMT_HOSTNAME=%s\n",
-                        time(NULL), i, hostname ? hostname : "NULL");
-                fflush(debug_log);
-            }
             
             /* Check if hostname is NULL - some network filesystems (NFS v4, CIFS)
              * may not populate VMT_HOSTNAME field on AIX */
@@ -1416,12 +1325,6 @@ int sigar_file_system_list_get(sigar_t *sigar,
         }
 
         SIGAR_SSTRCPY(fsp->sys_type_name, typename);
-    }
-
-    if (debug_log) {
-        fprintf(debug_log, "[%ld] Completed filesystem list successfully: processed %d entries\n",
-                time(NULL), i);
-        fclose(debug_log);  /* Close the debug log file */
     }
 
     free(buf);
