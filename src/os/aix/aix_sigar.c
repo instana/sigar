@@ -1144,38 +1144,76 @@ int mntctl(int command, int size, char *buffer);
  * Also validates that idx is within valid range and that the data pointer
  * would not exceed the vmount structure boundaries.
  */
-static inline char* safe_vmt2dataptr(struct vmount *vmt, int idx) {
+static inline char *safe_vmt2dataptr(struct vmount *vmt, int idx)
+{
     /* Validate vmount pointer */
     if (vmt == NULL) {
         return NULL;
     }
 
-    /* Validate vmt_length is reasonable (minimum size check) */
+    /*
+     * Validate that the reported vmount length is at least large
+     * enough to contain the fixed vmount structure itself.
+     */
     if (vmt->vmt_length < sizeof(struct vmount)) {
         return NULL;
     }
-    
-    /* Array bounds check: VMT_LASTINDEX is 5, so valid indices are 0-5 */
-    if (idx < 0 || idx >= sizeof(vmt->vmt_data) / sizeof(vmt->vmt_data[0])) {
+
+    /*
+     * Validate array index.
+     *
+     * VMT_LASTINDEX is the last valid entry in vmt_data[].
+     */
+    if (idx < 0 || idx > VMT_LASTINDEX) {
         return NULL;
     }
-    
-    /* Check if field is empty (offset or size is 0) */
-    if (vmt->vmt_data[idx].vmt_off == 0 || vmt->vmt_data[idx].vmt_size == 0) {
+
+    /*
+     * Reject empty or invalid entries.
+     *
+     * Offset 0 is treated as invalid because it would point to the
+     * beginning of the vmount structure instead of mount data.
+     */
+    if (vmt->vmt_data[idx].vmt_off <= 0 ||
+        vmt->vmt_data[idx].vmt_size <= 0)
+    {
         return NULL;
     }
-    
-    /* Validate offset is within vmt_length */
-    if (vmt->vmt_data[idx].vmt_off >= vmt->vmt_length) {
+
+    /*
+     * Convert values once to size_t for consistent arithmetic and
+     * to avoid signed/unsigned comparison issues.
+     */
+    size_t off  = (size_t)vmt->vmt_data[idx].vmt_off;
+    size_t size = (size_t)vmt->vmt_data[idx].vmt_size;
+    size_t len  = (size_t)vmt->vmt_length;
+
+    /*
+     * Ensure the data offset itself lies within the vmount buffer.
+     */
+    if (off >= len) {
         return NULL;
     }
-    
-    /* Overflow-safe size check: ensure size doesn't exceed remaining buffer */
-    if (vmt->vmt_data[idx].vmt_size > vmt->vmt_length - vmt->vmt_data[idx].vmt_off) {
+
+    /*
+     * Overflow-safe bounds validation.
+     *
+     * Validates:
+     *   off + size <= len
+     *
+     * without risking integer overflow.
+     */
+    if (size > len - off) {
         return NULL;
     }
-    
-    return vmt2dataptr(vmt, idx);
+
+    /*
+     * Safe to compute the final pointer.
+     *
+     * The returned pointer references data fully contained within
+     * the vmount structure according to vmt_length.
+     */
+    return (char *)vmt + off;
 }
 
 
