@@ -1207,33 +1207,13 @@ static inline char *safe_vmt2dataptr(struct vmount *vmt, int idx)
         return NULL;
     }
 
-    /*
-     * Ensure the string is NUL-terminated within the declared size.
+   /*
+     * Safe to compute the final pointer.
      *
-     * AIX vmount API specifies that string fields are NUL-terminated
-     * and vmt_size includes the NUL byte. However, we validate this
-     * explicitly to protect against:
-     *   - Kernel bugs that violate the API contract
-     *   - Memory corruption in kernel space
-     *   - Malformed vmount structures
-     *
-     * Without this check, strlen() or strncpy() could read past the
-     * validated bounds and potentially SIGSEGV on unmapped memory.
-     *
-     * This is the final defense layer ensuring complete memory safety.
+     * The returned pointer references data fully contained within
+     * the vmount structure according to vmt_length.
      */
-    char *ptr = (char *)vmt + off;
-    if (memchr(ptr, '\0', size) == NULL) {
-        return NULL;
-    }
-
-    /*
-     * Safe to return the pointer.
-     *
-     * The returned pointer references a NUL-terminated string fully
-     * contained within the vmount structure according to vmt_length.
-     */
-    return ptr;
+    return (char *)vmt + off;
 }
 
 
