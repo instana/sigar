@@ -1216,11 +1216,32 @@ static inline char *safe_vmt2dataptr(struct vmount *vmt, int idx)
     return (char *)vmt + off;
 }
 
+/*
+ * Check if a mount point already exists in the filesystem list.
+ * Returns 1 if found, 0 otherwise.
+ */
+static int contains_mount_point(sigar_file_system_list_t *fslist,
+                                const char *dir_name)
+{
+    int j;
+
+    if (dir_name == NULL || *dir_name == '\0') {
+        return 0;
+    }
+
+    for (j = 0; j < (int)fslist->number; j++) {
+        if (strcmp(fslist->data[j].dir_name, dir_name) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
 
 int sigar_file_system_list_get(sigar_t *sigar,
                                sigar_file_system_list_t *fslist)
 {
-    int i, j, size, num;
+    int i, size, num;
     char *buf, *mntlist, *buf_end;
 
     /* get required size */
@@ -1265,6 +1286,31 @@ int sigar_file_system_list_get(sigar_t *sigar,
 
         mntlist += ent->vmt_length;
 
+        char *dir_name = safe_vmt2dataptr(ent, VMT_STUB);
+        char *options = safe_vmt2dataptr(ent, VMT_ARGS);
+
+        devname = safe_vmt2dataptr(ent, VMT_OBJECT);
+        if (devname == NULL) {
+            devname = "";
+        }
+
+        /* Skip filesystems with NULL or empty dir_name or devname
+         * to prevent JNI crashes.
+         */
+        if (dir_name == NULL || *dir_name == '\0' ||
+            devname == NULL || *devname == '\0') {
+            continue;
+        }
+
+        /* Check for duplicate mount points.
+         * AIX can report the same mount point multiple times
+         * (for example stale NFS entries).
+         */
+        if (contains_mount_point(fslist, dir_name)) {
+            continue;
+        }
+
+        /* Only allocate a new entry once we know we keep it. */
         SIGAR_FILE_SYSTEM_LIST_GROW(fslist);
 
         fsp = &fslist->data[fslist->number++];
@@ -1274,18 +1320,22 @@ int sigar_file_system_list_get(sigar_t *sigar,
             typename = "aix";
             fsp->type = SIGAR_FSTYPE_LOCAL_DISK;
             break;
+
           case MNT_JFS:
             typename = "jfs";
             fsp->type = SIGAR_FSTYPE_LOCAL_DISK;
             break;
+
           case MNT_NFS:
           case MNT_NFS3:
             typename = "nfs";
             fsp->type = SIGAR_FSTYPE_NETWORK;
             break;
+
           case MNT_CDROM:
             fsp->type = SIGAR_FSTYPE_CDROM;
             break;
+
           case MNT_SFS:
           case MNT_CACHEFS:
           case MNT_AUTOFS:
@@ -1298,73 +1348,40 @@ int sigar_file_system_list_get(sigar_t *sigar,
             }
         }
 
-        char *dir_name = safe_vmt2dataptr(ent, VMT_STUB);
-        char *options = safe_vmt2dataptr(ent, VMT_ARGS);
+        SIGAR_SSTRCPY(fsp->dir_name, dir_name);
 
-        if (dir_name != NULL) {
-            SIGAR_SSTRCPY(fsp->dir_name, dir_name);
-        } else {
-            fsp->dir_name[0] = '\0';
-        }
-        
         if (options != NULL) {
             SIGAR_SSTRCPY(fsp->options, options);
-        } else {
+        }
+        else {
             fsp->options[0] = '\0';
         }
 
-        devname = safe_vmt2dataptr(ent, VMT_OBJECT);
-        if (devname == NULL) {
-            devname = "";
-        }
-
-        /* Skip filesystems with NULL or empty dir_name or devname to prevent JNI crashes */
-        if (dir_name == NULL || *dir_name == '\0' || devname == NULL || *devname == '\0') {
-            fslist->number--;
-            continue;
-        }
-
-        /* Check for duplicate mount points - AIX can report the same mount point multiple times
-         * (e.g., stale NFS mounts). The JNI layer cannot handle duplicates and will crash.
-         * Skip subsequent occurrences of the same mount point. */
-        int is_duplicate = 0;
-        for (j = 0; j < (int)(fslist->number - 1); j++) {
-            if (strcmp(fslist->data[j].dir_name, dir_name) == 0) {
-                is_duplicate = 1;
-                break;
-            }
-        }
-        if (is_duplicate) {
-            fslist->number--;
-            continue;
-        }
-
         if (fsp->type == SIGAR_FSTYPE_NETWORK) {
-            char *hostname   = safe_vmt2dataptr(ent, VMT_HOSTNAME);
-            
-            /* Check if hostname is NULL - some network filesystems (NFS v4, CIFS)
-             * may not populate VMT_HOSTNAME field on AIX */
+            char *hostname = safe_vmt2dataptr(ent, VMT_HOSTNAME);
+
+            /* Some network filesystems (NFSv4, CIFS, stale mounts)
+             * may not populate VMT_HOSTNAME on AIX.
+             */
             if (hostname == NULL || *hostname == '\0') {
-                /* No hostname available, just use device name */
                 SIGAR_SSTRCPY(fsp->dev_name, devname);
             }
             else {
 #if 0
                 /* XXX: these do not seem reliable */
-                int hostname_len = vmt2datasize(ent, VMT_HOSTNAME)-1; /* -1 == skip '\0' */
-                int devname_len  = vmt2datasize(ent, VMT_OBJECT);     /* includes '\0' */
+                int hostname_len = vmt2datasize(ent, VMT_HOSTNAME) - 1;
+                int devname_len  = vmt2datasize(ent, VMT_OBJECT);
 #else
                 int hostname_len = strlen(hostname);
-                int devname_len = strlen(devname) + 1;
+                int devname_len  = strlen(devname) + 1;
 #endif
-                int total_len    = hostname_len + devname_len + 1;    /* 1 == strlen(":") */
+                int total_len = hostname_len + devname_len + 1;
 
                 if (total_len > sizeof(fsp->dev_name)) {
-                    /* justincase - prevent overflow.  chances: slim..none */
+                    /* Prevent overflow */
                     SIGAR_SSTRCPY(fsp->dev_name, devname);
                 }
                 else {
-                    /* sprintf(fsp->devname, "%s:%s", hostname, devname) */
                     char *ptr = fsp->dev_name;
 
                     memcpy(ptr, hostname, hostname_len);
@@ -1380,7 +1397,7 @@ int sigar_file_system_list_get(sigar_t *sigar,
             SIGAR_SSTRCPY(fsp->dev_name, devname);
         }
 
-        /* we set fsp->type, just looking up sigar.c:fstype_names[type] */
+        /* Populate additional filesystem type information */
         sigar_fs_type_get(fsp);
 
         if (typename == NULL) {
