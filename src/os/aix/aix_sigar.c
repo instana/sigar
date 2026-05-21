@@ -1220,7 +1220,7 @@ static inline char *safe_vmt2dataptr(struct vmount *vmt, int idx)
 int sigar_file_system_list_get(sigar_t *sigar,
                                sigar_file_system_list_t *fslist)
 {
-    int i, size, num;
+    int i, j, size, num;
     char *buf, *mntlist, *buf_end;
 
     /* get required size */
@@ -1316,6 +1316,27 @@ int sigar_file_system_list_get(sigar_t *sigar,
         devname = safe_vmt2dataptr(ent, VMT_OBJECT);
         if (devname == NULL) {
             devname = "";
+        }
+
+        /* Skip filesystems with NULL or empty dir_name or devname to prevent JNI crashes */
+        if (dir_name == NULL || *dir_name == '\0' || devname == NULL || *devname == '\0') {
+            fslist->number--;
+            continue;
+        }
+
+        /* Check for duplicate mount points - AIX can report the same mount point multiple times
+         * (e.g., stale NFS mounts). The JNI layer cannot handle duplicates and will crash.
+         * Skip subsequent occurrences of the same mount point. */
+        int is_duplicate = 0;
+        for (j = 0; j < (int)(fslist->number - 1); j++) {
+            if (strcmp(fslist->data[j].dir_name, dir_name) == 0) {
+                is_duplicate = 1;
+                break;
+            }
+        }
+        if (is_duplicate) {
+            fslist->number--;
+            continue;
         }
 
         if (fsp->type == SIGAR_FSTYPE_NETWORK) {
