@@ -498,7 +498,8 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
                           fs->type);
 
         JENV->SetObjectArrayElement(env, fsarray, i, fsobj);
-        JENV->PopLocalFrame(env, NULL);
+        /* PopLocalFrame with fsobj as second parameter to preserve it in the array */
+        fsobj = JENV->PopLocalFrame(env, fsobj);
         if (JENV->ExceptionCheck(env)) {
             sigar_file_system_list_destroy(sigar, &fslist);
             return NULL;
