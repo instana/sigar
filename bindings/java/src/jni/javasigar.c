@@ -457,7 +457,11 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
             strstr(fs->dev_name, ":/"))
         {
             if (!nfs_cls) {
-                nfs_cls = SIGAR_FIND_CLASS("NfsFileSystem");
+                jclass local_nfs_cls = SIGAR_FIND_CLASS("NfsFileSystem");
+					if (local_nfs_cls != NULL) {
+						nfs_cls = JENV->NewGlobalRef(env, local_nfs_cls);
+						JENV->DeleteLocalRef(env, local_nfs_cls);
+					}
             }
             obj_cls = nfs_cls;
         }
