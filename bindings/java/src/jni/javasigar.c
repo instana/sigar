@@ -445,6 +445,9 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
         jclass obj_cls;
 
         if (JENV->PushLocalFrame(env, 16) < 0) {
+            if (nfs_cls != NULL) {
+                JENV->DeleteGlobalRef(env, nfs_cls);
+            }
             sigar_file_system_list_destroy(sigar, &fslist);
             return NULL;
         }
@@ -457,7 +460,11 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
             strstr(fs->dev_name, ":/"))
         {
             if (!nfs_cls) {
-                nfs_cls = SIGAR_FIND_CLASS("NfsFileSystem");
+                jclass local_nfs_cls = SIGAR_FIND_CLASS("NfsFileSystem");
+					if (local_nfs_cls != NULL) {
+						nfs_cls = JENV->NewGlobalRef(env, local_nfs_cls);
+						JENV->DeleteLocalRef(env, local_nfs_cls);
+					}
             }
             obj_cls = nfs_cls;
         }
@@ -469,6 +476,9 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
         fsobj = JENV->AllocObject(env, obj_cls);
         if (JENV->ExceptionCheck(env)) {
             JENV->PopLocalFrame(env, NULL);
+            if (nfs_cls != NULL) {
+                JENV->DeleteGlobalRef(env, nfs_cls);
+            }
             sigar_file_system_list_destroy(sigar, &fslist);
             return NULL;
         }
@@ -500,12 +510,18 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getFileSystemListNative)
         JENV->SetObjectArrayElement(env, fsarray, i, fsobj);
         JENV->PopLocalFrame(env, NULL);
         if (JENV->ExceptionCheck(env)) {
+            if (nfs_cls != NULL) {
+                JENV->DeleteGlobalRef(env, nfs_cls);
+            }
             sigar_file_system_list_destroy(sigar, &fslist);
             return NULL;
         }
     }
 
     sigar_file_system_list_destroy(sigar, &fslist);
+    if (nfs_cls != NULL) {
+        JENV->DeleteGlobalRef(env, nfs_cls);
+    }
 
     return fsarray;
 }
