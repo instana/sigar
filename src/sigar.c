@@ -1831,11 +1831,19 @@ int sigar_net_interface_config_get(sigar_t *sigar, const char *name,
         ifconfig->metric = ifr.ifr_metric ? ifr.ifr_metric : 1;
     }
 
-    close(sock);    
+    close(sock);
 
     /* XXX can we get a better description like win32? */
     SIGAR_SSTRCPY(ifconfig->description,
                   ifconfig->name);
+
+    logfile = fopen("/tmp/sigar.log", "a");
+    if (logfile) {
+        fprintf(logfile, "[sigar_net_interface_config_get] EXIT: Successfully configured interface %s, returning SIGAR_OK\n",
+                ifconfig->name);
+        fflush(logfile);
+        fclose(logfile);
+    }
 
     return SIGAR_OK;
 }
@@ -2084,13 +2092,31 @@ sigar_net_interface_config_primary_get(sigar_t *sigar,
     sigar_net_interface_list_destroy(sigar, &iflist);
 
     if (found) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[sigar_net_interface_config_primary_get] EXIT: Found primary interface, returning SIGAR_OK\n");
+            fflush(logfile);
+            fclose(logfile);
+        }
         return SIGAR_OK;
     }
     else if (possible_config.flags) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[sigar_net_interface_config_primary_get] EXIT: Using possible_config, returning SIGAR_OK\n");
+            fflush(logfile);
+            fclose(logfile);
+        }
         memcpy(ifconfig, &possible_config, sizeof(*ifconfig));
         return SIGAR_OK;
     }
     else {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[sigar_net_interface_config_primary_get] EXIT: No interface found, returning SIGAR_ENXIO\n");
+            fflush(logfile);
+            fclose(logfile);
+        }
         return SIGAR_ENXIO;
     }
 }
