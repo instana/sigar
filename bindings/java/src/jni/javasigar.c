@@ -1305,34 +1305,104 @@ JNIEXPORT jobjectArray SIGAR_JNIx(getNetInterfaceList)
     sigar_net_interface_list_t iflist;
     jobjectArray ifarray;
     jclass stringclass = JENV->FindClass(env, "java/lang/String");
+    FILE *logfile;
     dSIGAR(NULL);
 
+    logfile = fopen("/tmp/sigar.log", "a");
+    if (logfile) {
+        fprintf(logfile, "[JNI:getNetInterfaceList] ENTER: sigar=%p\n", (void*)sigar);
+        fflush(logfile);
+        fclose(logfile);
+    }
+
     if ((status = sigar_net_interface_list_get(sigar, &iflist)) != SIGAR_OK) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[JNI:getNetInterfaceList] sigar_net_interface_list_get FAILED: status=%d\n", status);
+            fflush(logfile);
+            fclose(logfile);
+        }
         sigar_throw_error(env, jsigar, status);
         return NULL;
     }
 
+    logfile = fopen("/tmp/sigar.log", "a");
+    if (logfile) {
+        fprintf(logfile, "[JNI:getNetInterfaceList] Got %d interfaces\n", (int)iflist.number);
+        fflush(logfile);
+        fclose(logfile);
+    }
+
     ifarray = JENV->NewObjectArray(env, iflist.number, stringclass, 0);
     if (JENV->ExceptionCheck(env)) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[JNI:getNetInterfaceList] ERROR: NewObjectArray failed\n");
+            fflush(logfile);
+            fclose(logfile);
+        }
         sigar_net_interface_list_destroy(sigar, &iflist);
         return NULL;
     }
 
+    logfile = fopen("/tmp/sigar.log", "a");
+    if (logfile) {
+        fprintf(logfile, "[JNI:getNetInterfaceList] Starting loop for %d interfaces\n", (int)iflist.number);
+        fflush(logfile);
+        fclose(logfile);
+    }
+
     for (i=0; i<iflist.number; i++) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[JNI:getNetInterfaceList] Processing interface %d: %s\n",
+                    i, iflist.data[i] ? iflist.data[i] : "NULL");
+            fflush(logfile);
+            fclose(logfile);
+        }
+
         jstring s = JENV->NewStringUTF(env, iflist.data[i]);
         if (JENV->ExceptionCheck(env)) {
+            logfile = fopen("/tmp/sigar.log", "a");
+            if (logfile) {
+                fprintf(logfile, "[JNI:getNetInterfaceList] ERROR: NewStringUTF failed for interface %d\n", i);
+                fflush(logfile);
+                fclose(logfile);
+            }
             sigar_net_interface_list_destroy(sigar, &iflist);
             return NULL;
         }
+
         JENV->SetObjectArrayElement(env, ifarray, i, s);
         JENV->DeleteLocalRef(env, s);
+        
         if (JENV->ExceptionCheck(env)) {
+            logfile = fopen("/tmp/sigar.log", "a");
+            if (logfile) {
+                fprintf(logfile, "[JNI:getNetInterfaceList] ERROR: SetObjectArrayElement failed for interface %d\n", i);
+                fflush(logfile);
+                fclose(logfile);
+            }
             sigar_net_interface_list_destroy(sigar, &iflist);
             return NULL;
+        }
+
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[JNI:getNetInterfaceList] Successfully processed interface %d\n", i);
+            fflush(logfile);
+            fclose(logfile);
         }
     }
 
     sigar_net_interface_list_destroy(sigar, &iflist);
+
+    logfile = fopen("/tmp/sigar.log", "a");
+    if (logfile) {
+        fprintf(logfile, "[JNI:getNetInterfaceList] EXIT: Returning array with %d interfaces\n", (int)iflist.number);
+        fflush(logfile);
+        fclose(logfile);
+    }
 
     return ifarray;
 }

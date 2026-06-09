@@ -1536,14 +1536,55 @@ static void hwaddr_aix_lookup(sigar_t *sigar, sigar_net_interface_config_t *ifco
 {
     char *ent, *end;
     struct ifreq *ifr;
+    FILE *logfile = fopen("/tmp/sigar.log", "a");
+
+    if (logfile) {
+        fprintf(logfile, "[hwaddr_aix_lookup] ENTER: sigar=%p, ifconfig=%p, ifconfig->name=%s\n",
+                (void*)sigar, (void*)ifconfig, ifconfig ? ifconfig->name : "NULL");
+        if (sigar) {
+            fprintf(logfile, "[hwaddr_aix_lookup] sigar->ifconf_buf=%p, sigar->ifconf_len=%d\n",
+                    (void*)sigar->ifconf_buf, sigar->ifconf_len);
+        }
+        fflush(logfile);
+    }
+
+    /* Safety check: ifconf_buf must be initialized before calling this function */
+    if (!sigar || !sigar->ifconf_buf || sigar->ifconf_len == 0) {
+        if (logfile) {
+            fprintf(logfile, "[hwaddr_aix_lookup] ERROR: Buffer not initialized!\n");
+            fprintf(logfile, "[hwaddr_aix_lookup] sigar=%p, ifconf_buf=%p, ifconf_len=%d\n",
+                    (void*)sigar, sigar ? (void*)sigar->ifconf_buf : NULL,
+                    sigar ? sigar->ifconf_len : 0);
+            fflush(logfile);
+            fclose(logfile);
+        }
+        sigar_hwaddr_set_null(ifconfig);
+        return;
+    }
 
     /* XXX: assumes sigar_net_interface_list_get has been called */
     end = sigar->ifconf_buf + sigar->ifconf_len;
+    
+    if (logfile) {
+        fprintf(logfile, "[hwaddr_aix_lookup] Buffer OK: start=%p, end=%p, len=%d\n",
+                (void*)sigar->ifconf_buf, (void*)end, sigar->ifconf_len);
+        fflush(logfile);
+    }
 
     for (ent = sigar->ifconf_buf;
          ent < end;
          ent += sizeof(*ifr))
     {
+        /* Bounds check to prevent buffer overrun */
+        if (ent + sizeof(*ifr) > end) {
+            if (logfile) {
+                fprintf(logfile, "[hwaddr_aix_lookup] Bounds check failed: ent=%p, end=%p\n",
+                        (void*)ent, (void*)end);
+                fflush(logfile);
+            }
+            break;
+        }
+
         ifr = (struct ifreq *)ent;
 
         if (ifr->ifr_addr.sa_family != AF_LINK) {
@@ -1553,11 +1594,29 @@ static void hwaddr_aix_lookup(sigar_t *sigar, sigar_net_interface_config_t *ifco
         if (strEQ(ifr->ifr_name, ifconfig->name)) {
             struct sockaddr_dl *sdl = (struct sockaddr_dl *)&ifr->ifr_addr;
 
+            if (logfile) {
+                fprintf(logfile, "[hwaddr_aix_lookup] Found matching interface: %s\n", ifr->ifr_name);
+                fflush(logfile);
+            }
+
             sigar_net_address_mac_set(ifconfig->hwaddr,
                                       LLADDR(sdl),
                                       sdl->sdl_alen);
+            
+            if (logfile) {
+                fprintf(logfile, "[hwaddr_aix_lookup] EXIT: Success\n");
+                fflush(logfile);
+                fclose(logfile);
+            }
             return;
         }
+    }
+
+    if (logfile) {
+        fprintf(logfile, "[hwaddr_aix_lookup] No matching interface found\n");
+        fprintf(logfile, "[hwaddr_aix_lookup] EXIT: Not found\n");
+        fflush(logfile);
+        fclose(logfile);
     }
 
     sigar_hwaddr_set_null(ifconfig);
@@ -1619,8 +1678,34 @@ int sigar_net_interface_config_get(sigar_t *sigar, const char *name,
 {
     int sock;
     struct ifreq ifr;
+    FILE *logfile = fopen("/tmp/sigar.log", "a");
+
+    if (logfile) {
+        fprintf(logfile, "[sigar_net_interface_config_get] ENTER: sigar=%p, name=%s, ifconfig=%p\n",
+                (void*)sigar, name ? name : "NULL", (void*)ifconfig);
+        fflush(logfile);
+        fclose(logfile);
+    }
+
+    /* Validate input parameters */
+    if (!sigar || !ifconfig) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[sigar_net_interface_config_get] ERROR: Invalid parameters! sigar=%p, ifconfig=%p\n",
+                    (void*)sigar, (void*)ifconfig);
+            fflush(logfile);
+            fclose(logfile);
+        }
+        return EINVAL;
+    }
 
     if (!name) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[sigar_net_interface_config_get] name is NULL, calling sigar_net_interface_config_primary_get\n");
+            fflush(logfile);
+            fclose(logfile);
+        }
         return sigar_net_interface_config_primary_get(sigar, ifconfig);
     }
 
@@ -1703,6 +1788,15 @@ int sigar_net_interface_config_get(sigar_t *sigar, const char *name,
                                       IFHWADDRLEN);
         }
 #elif defined(_AIX) || defined(__osf__)
+        {
+            FILE *logfile = fopen("/tmp/sigar.log", "a");
+            if (logfile) {
+                fprintf(logfile, "[sigar_net_interface_config_get] Calling hwaddr_aix_lookup for interface: %s\n",
+                        ifconfig->name);
+                fflush(logfile);
+                fclose(logfile);
+            }
+        }
         hwaddr_aix_lookup(sigar, ifconfig);
         SIGAR_SSTRCPY(ifconfig->type,
                       SIGAR_NIC_ETHERNET);
@@ -1916,14 +2010,50 @@ sigar_net_interface_config_primary_get(sigar_t *sigar,
     int i, status, found=0;
     sigar_net_interface_list_t iflist;
     sigar_net_interface_config_t possible_config;
+    FILE *logfile = fopen("/tmp/sigar.log", "a");
+
+    if (logfile) {
+        fprintf(logfile, "[sigar_net_interface_config_primary_get] ENTER: sigar=%p, ifconfig=%p\n",
+                (void*)sigar, (void*)ifconfig);
+        fflush(logfile);
+        fclose(logfile);
+    }
 
     possible_config.flags = 0;
 
+    logfile = fopen("/tmp/sigar.log", "a");
+    if (logfile) {
+        fprintf(logfile, "[sigar_net_interface_config_primary_get] Calling sigar_net_interface_list_get\n");
+        fflush(logfile);
+        fclose(logfile);
+    }
+
     if ((status = sigar_net_interface_list_get(sigar, &iflist)) != SIGAR_OK) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[sigar_net_interface_config_primary_get] sigar_net_interface_list_get FAILED: status=%d\n", status);
+            fflush(logfile);
+            fclose(logfile);
+        }
         return status;
     }
 
+    logfile = fopen("/tmp/sigar.log", "a");
+    if (logfile) {
+        fprintf(logfile, "[sigar_net_interface_config_primary_get] Found %d interfaces\n", (int)iflist.number);
+        fflush(logfile);
+        fclose(logfile);
+    }
+
     for (i=0; i<iflist.number; i++) {
+        logfile = fopen("/tmp/sigar.log", "a");
+        if (logfile) {
+            fprintf(logfile, "[sigar_net_interface_config_primary_get] Checking interface %d: %s\n",
+                    i, iflist.data[i]);
+            fflush(logfile);
+            fclose(logfile);
+        }
+
         status = sigar_net_interface_config_get(sigar,
                                                 iflist.data[i], ifconfig);
 
