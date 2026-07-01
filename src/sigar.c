@@ -1537,6 +1537,12 @@ static void hwaddr_aix_lookup(sigar_t *sigar, sigar_net_interface_config_t *ifco
     char *ent, *end;
     struct ifreq *ifr;
 
+    /* Safety check: ensure buffer is initialized before access */
+    if (!sigar || !sigar->ifconf_buf || sigar->ifconf_len == 0) {
+        sigar_hwaddr_set_null(ifconfig);
+        return;
+    }
+
     /* XXX: assumes sigar_net_interface_list_get has been called */
     end = sigar->ifconf_buf + sigar->ifconf_len;
 
