@@ -51,8 +51,7 @@ struct sigar_t {
     proc_fd_func_t getprocfd;
     int pagesize;
     swaps_t swaps;
-    time_t last_getprocs;
-    sigar_pid_t last_pid;
+    sigar_cache_t *pinfocache;
     struct procsinfo64 *pinfo;
     struct cpuinfo *cpuinfo;
     int cpuinfo_size;
