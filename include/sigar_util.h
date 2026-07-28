@@ -196,5 +196,6 @@ sigar_cache_entry_t *sigar_cache_find(sigar_cache_t *table,
                                       sigar_uint64_t key);
 
 void sigar_cache_destroy(sigar_cache_t *table);
+void sigar_perform_cleanup_if_necessary(sigar_cache_t *table);
 
 #endif /* SIGAR_UTIL_H */

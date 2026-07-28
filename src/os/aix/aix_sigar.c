@@ -715,6 +715,10 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
             SIGAR_LAST_PROC_EXPIRE * 1000);
     }
 
+    /* Run cleanup before capturing any pointer so freed nodes are never
+     * accessed through entry->value or sigar->pinfo. */
+    sigar_perform_cleanup_if_necessary(sigar->pinfocache);
+
     entry = sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
     if (entry && entry->value) {
         pce = (pinfo_cache_entry_t *)entry->value;
@@ -727,6 +731,9 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
     entry = sigar_cache_get(sigar->pinfocache, (sigar_uint64_t)pid);
     if (entry->value == NULL) {
         pinfo_cache_entry_t *newpce = malloc(sizeof(pinfo_cache_entry_t));
+        if (newpce == NULL) {
+            return ENOMEM;
+        }
         newpce->fetched = 0;
         entry->value = newpce;
     }
