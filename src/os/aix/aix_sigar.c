@@ -700,6 +700,7 @@ int sigar_os_proc_list_get(sigar_t *sigar,
 
 typedef struct {
     time_t fetched;
+    int valid;          /* 1 if info is populated, 0 if getprocs failed */
     struct procsinfo64 info;
 } pinfo_cache_entry_t;
 
@@ -723,6 +724,9 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
     if (entry && entry->value) {
         pce = (pinfo_cache_entry_t *)entry->value;
         if ((time(NULL) - pce->fetched) < SIGAR_LAST_PROC_EXPIRE) {
+            if (!pce->valid) {
+                return ESRCH;
+            }
             sigar->pinfo = &pce->info;
             return SIGAR_OK;
         }
@@ -735,9 +739,13 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
             return ENOMEM;
         }
         newpce->fetched = 0;
+        newpce->valid = 0;
         entry->value = newpce;
     }
     pce = (pinfo_cache_entry_t *)entry->value;
+
+    pce->fetched = time(NULL);
+    pce->valid = 0;
 
     num = getprocs(&pce->info, sizeof(pce->info),
                    NULL, 0, &pid, 1);
@@ -746,7 +754,7 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
         return ESRCH;
     }
 
-    pce->fetched = time(NULL);
+    pce->valid = 1;
     sigar->pinfo = &pce->info;
 
     return SIGAR_OK;
