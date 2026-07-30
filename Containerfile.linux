@@ -1,6 +1,6 @@
-FROM centos:7
+FROM centos:6
 
-# CentOS 7 is EOL — redirect yum to the vault mirror
+# CentOS 6 is EOL — redirect yum to the vault mirror
 RUN sed -i \
     -e 's|^mirrorlist=|#mirrorlist=|g' \
     -e 's|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' \
