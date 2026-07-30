@@ -11,6 +11,8 @@ ANT_INSTALL_DIR="/opt/apache-ant"
 ANT_ARCHIVE="apache-ant-${ANT_VERSION}-bin.tar.gz"
 ANT_URL="https://archive.apache.org/dist/ant/binaries/${ANT_ARCHIVE}"
 JAVA_HOME_CANDIDATE="/usr/java8_64"
+PROFILE="${HOME}/.profile"
+FREEWARE_PATH="/usr/local/bin:/opt/freeware/bin"
 
 fail() {
     echo "ERROR: $1" >&2
@@ -42,36 +44,50 @@ AIX_MAJOR=$(echo "${AIX_LEVEL}" | cut -c1-4)
 [ "${AIX_MAJOR}" -ge 7200 ] 2>/dev/null || fail "AIX 7.2 or later is required (detected ${AIX_LEVEL})."
 ok "AIX version OK"
 
-# Check available space (rough minimum: 1024 MB in /tmp and /opt)
-for dir in /tmp /opt; do
-    FREE_MB=$(df -m "${dir}" | awk 'NR==2 {print $3}')
-    [ "${FREE_MB:-0}" -ge 512 ] || fail "Less than 512 MB free in ${dir} (found ${FREE_MB} MB). Please free up space."
-    ok "Disk space in ${dir}: ${FREE_MB} MB free"
-done
+# Check available space: /tmp needs ~512 MB, /opt needs ~1024 MB (DNF packages)
+check_space() {
+    DIR=$1
+    MIN_MB=$2
+    FREE_MB=$(df -m "${DIR}" | awk 'NR==2 {print $3}')
+    if [ "${FREE_MB:-0}" -lt "${MIN_MB}" ]; then
+        fail "Not enough space in ${DIR}: ${FREE_MB} MB free, ${MIN_MB} MB required. Free up space or extend the filesystem (e.g. chfs -a size=+${MIN_MB}M ${DIR})."
+    fi
+    ok "Disk space in ${DIR}: ${FREE_MB} MB free (need ${MIN_MB} MB)"
+}
+
+check_space /tmp  512
+check_space /opt 1024
 
 # ---------------------------------------------------------------------------
 # 2. Bootstrap DNF if not present
 # ---------------------------------------------------------------------------
 info "Checking DNF..."
 
-export PATH=/opt/freeware/bin:/opt/freeware/sbin:$PATH
+export PATH=/usr/local/bin:/opt/freeware/bin:/opt/freeware/sbin:$PATH
 
 if ! command -v dnf >/dev/null 2>&1; then
     info "DNF not found — bootstrapping AIX Toolbox DNF..."
 
-    PERL_DOWNLOAD=/usr/opt/perl5/bin/lwp-download
-    [ -x "${PERL_DOWNLOAD}" ] || fail \
-        "DNF is missing and the Perl downloader (${PERL_DOWNLOAD}) was not found. " \
-        "Install Perl for AIX first, or install DNF manually from the AIX Toolbox."
+    command -v perl >/dev/null 2>&1 || fail "Perl is required to bootstrap DNF but was not found."
 
     cd /tmp
-    LDR_CNTRL=MAXDATA=0x80000000@DSA "${PERL_DOWNLOAD}" \
-        https://public.dhe.ibm.com/aix/freeSoftware/aixtoolbox/ezinstall/ppc/dnf_aixtoolbox.sh
+    perl -e '
+use File::Fetch;
+my $url = "https://public.dhe.ibm.com/aix/freeSoftware/aixtoolbox/ezinstall/ppc/dnf_aixtoolbox.sh";
+my $ff  = File::Fetch->new(uri => $url);
+my $file = $ff->fetch() or die $ff->error;
+'
     chmod +x ./dnf_aixtoolbox.sh
-    ./dnf_aixtoolbox.sh -d
+    sh ./dnf_aixtoolbox.sh -y
     cd -
 
-    export PATH=/opt/freeware/bin:/opt/freeware/sbin:$PATH
+    # Persist the toolbox PATH in the root profile if not already there
+    if ! grep -qF "${FREEWARE_PATH}" "${PROFILE}" 2>/dev/null; then
+        echo "export PATH=${FREEWARE_PATH}:\$PATH" >> "${PROFILE}"
+        info "Added ${FREEWARE_PATH} to ${PROFILE}"
+    fi
+    export PATH=/usr/local/bin:/opt/freeware/bin:/opt/freeware/sbin:$PATH
+
     command -v dnf >/dev/null 2>&1 || fail "DNF installation failed."
     ok "DNF installed"
 else
@@ -79,23 +95,27 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Install git and gcc via DNF if missing
+# 3. Update DNF package index and install build dependencies
 # ---------------------------------------------------------------------------
-info "Checking git..."
-if ! command -v git >/dev/null 2>&1; then
-    info "git not found — installing via DNF..."
-    dnf install -y git
-else
-    ok "git already present: $(git --version)"
-fi
+info "Updating DNF package index..."
+dnf update -y
 
-info "Checking gcc..."
-if ! command -v gcc >/dev/null 2>&1; then
-    info "gcc not found — installing via DNF..."
-    dnf install -y gcc
-else
-    ok "gcc already present: $(gcc --version | head -1)"
-fi
+info "Installing build dependencies via DNF..."
+dnf install -y \
+    git \
+    gcc gcc-c++ gcc-cpp \
+    binutils \
+    make \
+    autoconf autogen automake \
+    libtool \
+    bison flex \
+    xz \
+    wget unzip rsync \
+    perl-Git \
+    pkg-config \
+    python-devel python3-devel \
+    cmake \
+    sudo
 
 # ---------------------------------------------------------------------------
 # 4. Verify Java 8 JDK
