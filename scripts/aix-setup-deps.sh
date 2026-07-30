@@ -2,9 +2,16 @@
 # aix-setup-deps.sh
 # Checks and installs all dependencies required to build the SIGAR JNI library on AIX.
 # Must be run as root on AIX 7.2+.
-# Usage: sh aix-setup-deps.sh
+# Usage: sh aix-setup-deps.sh [--skip-space-check]
 
 set -e
+
+SKIP_SPACE_CHECK=0
+for arg in "$@"; do
+    case "$arg" in
+        --skip-space-check) SKIP_SPACE_CHECK=1 ;;
+    esac
+done
 
 ANT_VERSION="1.10.14"
 ANT_INSTALL_DIR="/opt/apache-ant"
@@ -48,15 +55,21 @@ ok "AIX version OK"
 check_space() {
     DIR=$1
     MIN_MB=$2
-    FREE_MB=$(df -m "${DIR}" | awk 'NR==2 {print $3}')
+    # AIX df outputs 1K-blocks; column 4 is Available 1K-blocks.
+    # Avoid -m as it is not universally supported and may silently be ignored.
+    FREE_MB=$(df "${DIR}" | awk 'NR>1 && $NF!="" {avail=$4} END {print int(avail/1024)}')
     if [ "${FREE_MB:-0}" -lt "${MIN_MB}" ]; then
         fail "Not enough space in ${DIR}: ${FREE_MB} MB free, ${MIN_MB} MB required. Free up space or extend the filesystem (e.g. chfs -a size=+${MIN_MB}M ${DIR})."
     fi
     ok "Disk space in ${DIR}: ${FREE_MB} MB free (need ${MIN_MB} MB)"
 }
 
-check_space /tmp  512
-check_space /opt 1024
+if [ "${SKIP_SPACE_CHECK}" = "0" ]; then
+    check_space /tmp  512
+    check_space /opt 1024
+else
+    info "Skipping disk space checks (--skip-space-check)"
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Bootstrap DNF if not present
