@@ -430,7 +430,7 @@ SIGAR_DECLARE(int) sigar_proc_list_get(sigar_t *sigar,
             sigar_proc_list_create(sigar->pids);
         }
         else if (sigar->pids->number > 0 &&
-                 (time(NULL) - sigar->last_proc_list) < SIGAR_LAST_PROC_EXPIRE) {
+                 (time(NULL) - sigar->last_proc_list) <= SIGAR_LAST_PROC_EXPIRE) {
             return SIGAR_OK;
         }
         else {

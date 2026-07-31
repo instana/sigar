@@ -723,7 +723,7 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
     entry = sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
     if (entry && entry->value) {
         pce = (pinfo_cache_entry_t *)entry->value;
-        if ((time(NULL) - pce->fetched) < SIGAR_LAST_PROC_EXPIRE) {
+        if ((time(NULL) - pce->fetched) <= SIGAR_LAST_PROC_EXPIRE) {
             if (!pce->valid) {
                 return ESRCH;
             }
