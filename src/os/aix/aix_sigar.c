@@ -700,7 +700,9 @@ int sigar_os_proc_list_get(sigar_t *sigar,
 
 typedef struct {
     time_t fetched;
-    int valid;          /* 1 if info is populated, 0 if getprocs failed */
+    int valid;           /* 1 if info is populated, 0 if getprocs failed */
+    int processor;       /* cached ti_affinity; SIGAR_FIELD_NOTIMPL if getthrds failed */
+    int processor_valid; /* 0 = not yet fetched for this cache lifetime, 1 = fetched */
     struct procsinfo64 info;
 } pinfo_cache_entry_t;
 
@@ -712,8 +714,8 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
 
     if (sigar->pinfocache == NULL) {
         sigar->pinfocache = sigar_expired_cache_new(128,
-            5 * 1000,
-            SIGAR_LAST_PROC_EXPIRE * 1000);
+            (SIGAR_PINFO_CACHE_EXPIRE + 3) * 1000,
+            SIGAR_PINFO_CACHE_EXPIRE * 1000);
     }
 
     /* Run cleanup before capturing any pointer so freed nodes are never
@@ -723,11 +725,12 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
     entry = sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
     if (entry && entry->value) {
         pce = (pinfo_cache_entry_t *)entry->value;
-        if ((time(NULL) - pce->fetched) <= SIGAR_LAST_PROC_EXPIRE) {
+        if ((time(NULL) - pce->fetched) <= SIGAR_PINFO_CACHE_EXPIRE) {
             if (!pce->valid) {
                 return ESRCH;
             }
             sigar->pinfo = &pce->info;
+            sigar->pinfo_entry = pce;
             return SIGAR_OK;
         }
     }
@@ -740,12 +743,14 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
         }
         newpce->fetched = 0;
         newpce->valid = 0;
+        newpce->processor_valid = 0;
         entry->value = newpce;
     }
     pce = (pinfo_cache_entry_t *)entry->value;
 
     pce->fetched = time(NULL);
     pce->valid = 0;
+    pce->processor_valid = 0;
 
     num = getprocs(&pce->info, sizeof(pce->info),
                    NULL, 0, &pid, 1);
@@ -756,6 +761,7 @@ static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
 
     pce->valid = 1;
     sigar->pinfo = &pce->info;
+    sigar->pinfo_entry = pce;
 
     return SIGAR_OK;
 }
@@ -849,18 +855,28 @@ int sigar_proc_state_get(sigar_t *sigar, sigar_pid_t pid,
 {
     int status = sigar_getprocs(sigar, pid);
     struct procsinfo64 *pinfo = sigar->pinfo;
-    tid_t tid = 0;
-    struct thrdsinfo64 thrinfo;
+    pinfo_cache_entry_t *pce = (pinfo_cache_entry_t *)sigar->pinfo_entry;
 
     if (status != SIGAR_OK) {
         return status;
     }
 
-    if (getthrds(pid, &thrinfo, sizeof(thrinfo), &tid, 1) == 1) {
-        procstate->processor = thrinfo.ti_affinity;
+    if (pce && pce->processor_valid) {
+        procstate->processor = pce->processor;
     }
     else {
-        procstate->processor = SIGAR_FIELD_NOTIMPL;
+        tid_t tid = 0;
+        struct thrdsinfo64 thrinfo;
+        if (getthrds(pid, &thrinfo, sizeof(thrinfo), &tid, 1) == 1) {
+            procstate->processor = thrinfo.ti_affinity;
+        }
+        else {
+            procstate->processor = SIGAR_FIELD_NOTIMPL;
+        }
+        if (pce) {
+            pce->processor = procstate->processor;
+            pce->processor_valid = 1;
+        }
     }
     
     SIGAR_SSTRCPY(procstate->name, pinfo->pi_comm);
@@ -897,6 +913,24 @@ int sigar_os_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
     /* XXX if buffer is not large enough args are truncated */
     char buffer[8192], *ptr, *end;
     struct procsinfo pinfo;
+
+    /* Skip getargs for zombie/idle processes — they have no args and the
+     * kernel call will fail anyway.  Use the pinfocache to avoid a syscall. */
+    if (sigar->pinfocache) {
+        sigar_cache_entry_t *ce =
+            sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
+        if (ce && ce->value) {
+            pinfo_cache_entry_t *pce = (pinfo_cache_entry_t *)ce->value;
+            if (pce->valid &&
+                (time(NULL) - pce->fetched) <= SIGAR_PINFO_CACHE_EXPIRE)
+            {
+                int state = pce->info.pi_state;
+                if (state == SZOMB || state == SIDL) {
+                    return ESRCH;
+                }
+            }
+        }
+    }
 
     pinfo.pi_pid = pid;
 

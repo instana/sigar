@@ -1,4 +1,4 @@
-# Plan: Reduce AIX `getprocs()` / `getthrds()` Kernel Calls in sigar
+# Plan: Reduce AIX `getprocs()` / `getthrds()` / `getargs()` Kernel Calls in sigar
 
 ## Overview
 
@@ -148,7 +148,7 @@ list is still fresh.
 
 ## Sub-Task 4 — Cache `getthrds()` result inside `pinfo_cache_entry_t`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ### Intent
 
@@ -171,48 +171,33 @@ to a CPU). Caching it for the same TTL as `pinfocache` (2s) is correct and safe.
 - The two-sweep pattern at t~6s (two Java threads) also benefits: second sweep hits
   cached affinity for all PIDs populated by the first sweep.
 
-### Todo List
+### Implemented
+- `pinfo_cache_entry_t` extended with `int processor` and `int processor_valid` fields
+  at [`src/os/aix/aix_sigar.c:701`](src/os/aix/aix_sigar.c:701).
+- `processor_valid = 0` initialised on new entry allocation and reset on every
+  `getprocs()` refresh (alongside `valid = 0` and `fetched` update).
+- `sigar_t` gains a `void *pinfo_entry` field ([`src/os/aix/sigar_os.h:56`](src/os/aix/sigar_os.h:56))
+  set to the `pinfo_cache_entry_t *` by `sigar_getprocs()` on both hit and miss paths.
+- `sigar_proc_state_get()` casts `sigar->pinfo_entry` back to `pinfo_cache_entry_t *`
+  and branches: cache hit → use `pce->processor` directly; miss → call `getthrds()`,
+  store result, set `processor_valid = 1`.
+- `pce` guard (`if (pce)`) handles the theoretical case where `pinfo_entry` is NULL
+  (e.g., if `sigar_getprocs()` returned an error path — should not happen since status
+  is checked first, but defensive).
 
-1. **Extend `pinfo_cache_entry_t`** in [`src/os/aix/aix_sigar.c:701`](src/os/aix/aix_sigar.c:701) to add:
-   ```c
-   int processor;        /* cached ti_affinity; SIGAR_FIELD_NOTIMPL if getthrds failed */
-   int processor_valid;  /* 0 = not yet fetched for this cache entry, 1 = fetched */
-   ```
-
-2. **In `sigar_proc_state_get()`** at [`src/os/aix/aix_sigar.c:847`](src/os/aix/aix_sigar.c:847):
-   - After `sigar_getprocs()` succeeds, look up the same cache entry:
-     `pinfo_cache_entry_t *pce = entry->value` (the same entry `sigar_getprocs` just returned).
-   - If `pce->processor_valid`, use `pce->processor` directly — skip `getthrds()`.
-   - Otherwise call `getthrds()` as today, store the result in `pce->processor`, set
-     `pce->processor_valid = 1`.
-
-3. **Reset `processor_valid = 0`** whenever a cache entry is refreshed (i.e., in the
-   `getprocs()` call branch of `sigar_getprocs()` where `pce->fetched` is updated) so
-   that a fresh `getprocs()` fetch also re-fetches `getthrds()` for that PID.
-
-### Access pattern for the cache entry in `sigar_proc_state_get()`
-
-`sigar_getprocs()` already sets `sigar->pinfo = &pce->info` before returning. The
-`pce` pointer itself is reachable via the same `sigar_cache_find()` call — or more
-simply, by storing the current `pce` in a static/local that `sigar_proc_state_get()`
-can use. The cleanest approach is to expose the `pce` pointer via a second field in
-`sigar_t`, e.g. `pinfo_cache_entry_t *pinfo_entry`, set alongside `pinfo` inside
-`sigar_getprocs()`. `sigar_proc_state_get()` reads `sigar->pinfo_entry` after the
-`sigar_getprocs()` call succeeds.
-
-### Relevant Context
-- `getthrds()` call site: [`src/os/aix/aix_sigar.c:859`](src/os/aix/aix_sigar.c:859)
-- `pinfo_cache_entry_t` definition: [`src/os/aix/aix_sigar.c:701`](src/os/aix/aix_sigar.c:701)
-- `sigar_getprocs()` sets `sigar->pinfo`: [`src/os/aix/aix_sigar.c:730`](src/os/aix/aix_sigar.c:730) and `:758`
-- `SIGAR_FIELD_NOTIMPL` is the sentinel used when `getthrds()` fails (returns != 1).
-- `processor_valid` must be reset to 0 alongside `pce->valid = 0` when `fetched` is
-  refreshed, so a stale entry that gets a new `getprocs()` also re-issues `getthrds()`.
+### Expected truss result
+- First call per PID per TTL window: 1 `getthrds` (same as before).
+- All subsequent calls within the TTL window: **0 `getthrds`**.
+- `getProcStat()` at 1 Hz: only the first cycle pays N `getthrds`; all subsequent
+  cycles within the 2s TTL window pay 0.
+- Double-sweep at t~6s (two threads): second thread hits cached `processor_valid`
+  for all PIDs already populated by the first thread — 0 additional `getthrds`.
 
 ---
 
-## Sub-Task 5 — Investigate double batch-enumeration at t~6s (two concurrent threads)
+## Sub-Task 5 — Double batch-enumeration at t~6s (two concurrent threads)
 
-**Status:** [ ] pending (investigation / observation only — may be resolved by Sub-Task 4)
+**Status:** [x] resolved by Sub-Task 4 (getthrds cost eliminated; batch sweeps remain but are cheap)
 
 ### Observation
 
@@ -240,3 +225,58 @@ but both still pay the batch enumeration cost. The only fix for that is to ensur
 The non-NULL path in `sigar_proc_list_get()` unconditionally calls `sigar_os_proc_list_get`.
 This is by design (the caller wants a fresh list). No action needed unless the agent
 can be changed to always use the NULL path.
+
+---
+
+## Sub-Task 6 — Increase `pinfocache` TTL to reduce steady-state `getprocs(1)` misses
+
+**Status:** [x] done
+
+### Problem
+With 1200 processes and `SIGAR_LAST_PROC_EXPIRE = 2s`, the steady-state cache miss rate
+is 1200/2 = **600 getprocs(1)/s**. Confirmed by the "after" measurement: 34154/60s ≈ 569/s.
+Each miss also resets `processor_valid = 0`, causing a paired `getthrds` call, so
+32587/60s ≈ 543/s `getthrds` — matching the miss rate exactly.
+
+The proc list TTL must stay at 2s (correctness: stale PID lists cause missed new processes).
+The per-PID `procsinfo64` cache can safely use a longer TTL — 5s is already the standard
+used by `proc_cpu` and `proc_io` cache entries.
+
+### Implemented
+- Added `SIGAR_PINFO_CACHE_EXPIRE = 5` (seconds) to [`src/os/aix/sigar_os.h`](src/os/aix/sigar_os.h:65),
+  decoupled from `SIGAR_LAST_PROC_EXPIRE`.
+- `sigar_expired_cache_new()` initialisation updated to use `SIGAR_PINFO_CACHE_EXPIRE * 1000`
+  for entry TTL and `(SIGAR_PINFO_CACHE_EXPIRE + 3) * 1000` for cleanup period.
+- TTL check in `sigar_getprocs()` updated to compare against `SIGAR_PINFO_CACHE_EXPIRE`.
+
+### Expected impact
+- Steady-state misses: 1200/5 = **240/s** (down from 600/s, –60%).
+- Paired `getthrds` miss calls drop by same ratio.
+
+---
+
+## Sub-Task 7 — Skip `getargs` for zombie/dead processes using pinfocache
+
+**Status:** [x] done
+
+### Problem
+After Sub-Task 3 (proc list TTL), PTQL `Args.*` scans run faster and call `getargs` for
+every PID in the shared cached list — including all 500 zombie/dead processes. The kernel
+`getargs` call on a zombie/dead PID always fails (returns error), but costs a syscall
+anyway. With 500 such PIDs and ~0.5 PTQL-Args scans/s, this is ~250 wasted `getargs/s`.
+
+The `pinfocache` already holds `pi_state` for every PID that has been queried via
+`sigar_getprocs()`. `SZOMB` and `SIDL` processes have no argument vector.
+
+### Implemented
+- In `sigar_os_proc_args_get()` at [`src/os/aix/aix_sigar.c:910`](src/os/aix/aix_sigar.c:910):
+  before calling the kernel `getargs`, check `pinfocache` for the PID. If a fresh
+  (`<= SIGAR_PINFO_CACHE_EXPIRE`) valid entry exists with `pi_state == SZOMB` or
+  `pi_state == SIDL`, return `ESRCH` immediately — same error the kernel would return.
+- The guard is skipped when `pinfocache == NULL` (first call before any `sigar_getprocs`)
+  or when the entry is absent/stale — in those cases the kernel call proceeds as normal.
+
+### Expected impact
+- ~500 zombie/dead PIDs × ~0.5 PTQL-Args scans/s = ~250 `getargs` syscalls/s eliminated.
+- `getargs` error count drops significantly (errors were the zombie/dead failures).
+- No change to behaviour for live processes.
