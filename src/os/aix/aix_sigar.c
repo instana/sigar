@@ -900,7 +900,10 @@ int sigar_proc_state_get(sigar_t *sigar, sigar_pid_t pid,
         return status;
     }
 
-    if (pce && pce->processor_valid) {
+    if (sigar->skip_proc_affinity) {
+        procstate->processor = SIGAR_FIELD_NOTIMPL;
+    }
+    else if (pce && pce->processor_valid) {
         procstate->processor = pce->processor;
     }
     else {

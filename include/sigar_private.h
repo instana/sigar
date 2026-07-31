@@ -47,6 +47,7 @@
  */
 #define SIGAR_T_BASE \
    int cpu_list_cores; \
+   int skip_proc_affinity; \
    int log_level; \
    void *log_data; \
    sigar_log_impl_t log_impl; \

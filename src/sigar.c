@@ -44,6 +44,7 @@ SIGAR_DECLARE(int) sigar_open(sigar_t **sigar)
     if (status == SIGAR_OK) {
         /* use env to revert to old behavior */
         (*sigar)->cpu_list_cores = getenv("SIGAR_CPU_LIST_SOCKETS") ? 0 : 1;
+        (*sigar)->skip_proc_affinity = getenv("SIGAR_ENABLE_PROC_AFFINITY") ? 0 : 1;
         (*sigar)->pid = 0;
         (*sigar)->ifconf_buf = NULL;
         (*sigar)->ifconf_len = 0;

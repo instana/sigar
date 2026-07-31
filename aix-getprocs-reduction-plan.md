@@ -335,3 +335,46 @@ results could not be stored in the cache.
 - `sigar_os_proc_list_get`: [`src/os/aix/aix_sigar.c:677`](src/os/aix/aix_sigar.c:677)
 - `pinfo_cache_entry_t` typedef: [`src/os/aix/aix_sigar.c:675`](src/os/aix/aix_sigar.c:675)
 - `SIGAR_PINFO_CACHE_EXPIRE`: [`src/os/aix/sigar_os.h:65`](src/os/aix/sigar_os.h:65)
+
+---
+
+## Sub-Task 9 — Skip `getthrds()` via `SIGAR_SKIP_PROC_AFFINITY` env var
+
+**Status:** [x] done
+
+### Problem
+
+`getthrds()` is called by `sigar_proc_state_get()` solely to populate `procstate->processor`
+(CPU affinity via `ti_affinity`). This field maps to `ProcState.getProcessor()` in Java.
+The field is not used by the Instana agent. At N=1200 processes and a 5s TTL, the cold-miss
+rate is still 1200/5 = **240 `getthrds`/s**. Each cold miss also resets `processor_valid = 0`
+which paired with the TTL expiry causes unavoidable steady-state cost even with Sub-Task 4
+caching in place.
+
+### Implemented
+
+- `int skip_proc_affinity` added to `SIGAR_T_BASE` in
+  [`include/sigar_private.h`](include/sigar_private.h).
+- Set at startup in `sigar_open()` ([`src/sigar.c`](src/sigar.c)):
+  ```c
+  (*sigar)->skip_proc_affinity = getenv("SIGAR_ENABLE_PROC_AFFINITY") ? 0 : 1;
+  ```
+  Absent = 1 (default on — skipping is the default). Set `SIGAR_ENABLE_PROC_AFFINITY=1`
+  to restore the full `getthrds` lookup.
+- Guard in `sigar_proc_state_get()` ([`src/os/aix/aix_sigar.c`](src/os/aix/aix_sigar.c)):
+  if `skip_proc_affinity` is set, `procstate->processor` is immediately set to
+  `SIGAR_FIELD_NOTIMPL` and the entire `getthrds` / cache-write block is skipped.
+  The Sub-Task 4 `processor_valid` cache path is unchanged when the env var is set.
+
+### Expected impact (default, env var absent)
+
+- **Zero `getthrds` syscalls** from any `sigar_proc_state_get()` call.
+- `ProcState.getProcessor()` returns `SIGAR_FIELD_NOTIMPL` (same as a failed `getthrds`).
+- Thread count (`procstate->threads` / `ProcState.getThreads()`) is unaffected — it comes
+  from `pinfo->pi_thcount` (part of `procsinfo64`, in `pinfocache`).
+
+### Non-impact
+
+- All other fields of `sigar_proc_state_t` are unaffected.
+- No change to any platform other than AIX (flag is in `SIGAR_T_BASE` but only
+  `sigar_proc_state_get` on AIX references it, since `getthrds` is AIX-only).
