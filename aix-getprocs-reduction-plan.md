@@ -280,3 +280,58 @@ The `pinfocache` already holds `pi_state` for every PID that has been queried vi
 - ~500 zombie/dead PIDs × ~0.5 PTQL-Args scans/s = ~250 `getargs` syscalls/s eliminated.
 - `getargs` error count drops significantly (errors were the zombie/dead failures).
 - No change to behaviour for live processes.
+- **Limitation:** the pre-check only fires after `pinfocache` has been populated for a PID
+  (i.e. after the first `sigar_getprocs()` or batch sweep for that PID). Before Sub-Task 8
+  the cache was cold until `sigar_proc_stat_get` ran its loop. Sub-Task 8 ensures the
+  batch sweep pre-warms the cache, so the zombie check is effective from the first PTQL scan.
+
+---
+
+## Sub-Task 8 — Prime `pinfocache` from the batch enumeration sweep
+
+**Status:** [x] done
+
+### Problem
+`sigar_proc_stat_get()` calls `sigar_proc_list_get(NULL)` → `sigar_os_proc_list_get()`,
+which uses `getprocs(count=32)` to read `procsinfo64` data for all N processes. That data
+was immediately discarded — only `pi_pid` was extracted. Then the subsequent loop called
+`sigar_proc_state_get()` for every PID, which called `sigar_getprocs()` → `getprocs(count=1)`
+for every PID, re-fetching the same kernel data a second time.
+
+This was the dominant remaining `getprocs` cost: **N per-PID `getprocs(1)` calls every
+time the proc list TTL expired** (every 2s → N/2 per second). With N=1200: 600/s.
+
+### Root cause
+`sigar_os_proc_list_get` used `struct procsinfo` (the 32-bit variant) for the batch buffer,
+while `pinfocache` stores `struct procsinfo64`. The data was incompatible, so the batch
+results could not be stored in the cache.
+
+### Implemented
+- **Switched batch buffer** in `sigar_os_proc_list_get` from `struct procsinfo infos[32]`
+  to `struct procsinfo64 infos[32]` — `getprocs` accepts both, selecting the struct via
+  the `sizeof` argument. No change to syscall count or semantics.
+- **Populate `pinfocache` during the sweep**: for each batch entry, call
+  `sigar_cache_get()` for that PID and write the `procsinfo64` data into the entry,
+  setting `fetched = now`, `valid = 1`. Fresh entries (still within `SIGAR_PINFO_CACHE_EXPIRE`)
+  are skipped — a more recent per-PID fetch is never overwritten by the batch.
+  `processor_valid` is reset to 0 on write (affinity will be re-fetched by `getthrds` on
+  next `sigar_proc_state_get` for that PID).
+- **`pinfocache` lazily initialised** inside `sigar_os_proc_list_get` as well, so the
+  batch sweep can populate it even before `sigar_getprocs()` is first called.
+- `pinfo_cache_entry_t` typedef moved above `sigar_os_proc_list_get` to resolve the
+  forward reference.
+
+### Expected impact
+- After the batch sweep, every `sigar_getprocs(pid)` call for the enumerated PIDs is a
+  **cache hit** — zero `getprocs(count=1)` calls fire in the subsequent loop.
+- The entire `sigar_proc_stat_get()` costs ~6 batch `getprocs` calls (for N=1200) instead
+  of 6 batch + 1200 per-PID calls.
+- At steady state: only batch sweeps remain (~3 batch-getprocs/s at 2s proc list TTL),
+  replacing the previous ~600 per-PID `getprocs(1)/s`.
+- Sub-Task 7 zombie skip now works from the **first** PTQL scan, not just after the
+  `sigar_proc_stat_get` loop has run, because the batch sweep pre-populates `pi_state`.
+
+### Relevant context
+- `sigar_os_proc_list_get`: [`src/os/aix/aix_sigar.c:677`](src/os/aix/aix_sigar.c:677)
+- `pinfo_cache_entry_t` typedef: [`src/os/aix/aix_sigar.c:675`](src/os/aix/aix_sigar.c:675)
+- `SIGAR_PINFO_CACHE_EXPIRE`: [`src/os/aix/sigar_os.h:65`](src/os/aix/sigar_os.h:65)
