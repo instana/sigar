@@ -168,6 +168,7 @@ int sigar_os_open(sigar_t **sigar)
     (*sigar)->boot_time = 0;
     (*sigar)->pinfocache = NULL;
     (*sigar)->pinfo = NULL;
+    (*sigar)->pinfo_entry = NULL;
     (*sigar)->cpuinfo = NULL;
     (*sigar)->cpuinfo_size = 0;
     SIGAR_ZERO(&(*sigar)->swaps);
