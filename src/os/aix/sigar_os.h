@@ -51,9 +51,9 @@ struct sigar_t {
     proc_fd_func_t getprocfd;
     int pagesize;
     swaps_t swaps;
-    time_t last_getprocs;
-    sigar_pid_t last_pid;
+    sigar_cache_t *pinfocache;
     struct procsinfo64 *pinfo;
+    void *pinfo_entry; /* pinfo_cache_entry_t *, last entry returned by sigar_getprocs */
     struct cpuinfo *cpuinfo;
     int cpuinfo_size;
     int cpu_mhz;
@@ -62,6 +62,11 @@ struct sigar_t {
     int thrusage;
     sigar_cache_t *diskmap; 
 };
+
+/* Per-PID procsinfo64 cache TTL in seconds.
+ * Longer than SIGAR_LAST_PROC_EXPIRE (2s) so that a 1200-process system
+ * does not saturate getprocs with steady-state misses (1200/TTL/s). */
+#define SIGAR_PINFO_CACHE_EXPIRE 5
 
 #define HAVE_STRERROR_R
 

@@ -174,7 +174,6 @@ sigar_cache_entry_t *sigar_cache_find(sigar_cache_t *table,
                                       sigar_uint64_t key)
 {
     sigar_cache_entry_t *entry, **ptr;
-    sigar_perform_cleanup_if_necessary(table);
 
     for (ptr = SIGAR_CACHE_IX(table, key), entry = *ptr;
          entry;

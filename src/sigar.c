@@ -44,6 +44,7 @@ SIGAR_DECLARE(int) sigar_open(sigar_t **sigar)
     if (status == SIGAR_OK) {
         /* use env to revert to old behavior */
         (*sigar)->cpu_list_cores = getenv("SIGAR_CPU_LIST_SOCKETS") ? 0 : 1;
+        (*sigar)->skip_proc_affinity = getenv("SIGAR_ENABLE_PROC_AFFINITY") ? 0 : 1;
         (*sigar)->pid = 0;
         (*sigar)->ifconf_buf = NULL;
         (*sigar)->ifconf_len = 0;
@@ -55,6 +56,7 @@ SIGAR_DECLARE(int) sigar_open(sigar_t **sigar)
         (*sigar)->self_path = NULL;
         (*sigar)->fsdev = NULL;
         (*sigar)->pids = NULL;
+        (*sigar)->last_proc_list = 0;
         (*sigar)->proc_cpu = NULL;
         (*sigar)->net_listen = NULL;
         (*sigar)->net_services_tcp = NULL;
@@ -428,6 +430,10 @@ SIGAR_DECLARE(int) sigar_proc_list_get(sigar_t *sigar,
             sigar->pids = malloc(sizeof(*sigar->pids));
             sigar_proc_list_create(sigar->pids);
         }
+        else if (sigar->pids->number > 0 &&
+                 (time(NULL) - sigar->last_proc_list) <= SIGAR_LAST_PROC_EXPIRE) {
+            return SIGAR_OK;
+        }
         else {
             sigar->pids->number = 0;
         }
@@ -437,7 +443,11 @@ SIGAR_DECLARE(int) sigar_proc_list_get(sigar_t *sigar,
         sigar_proc_list_create(proclist);
     }
 
-    return sigar_os_proc_list_get(sigar, proclist);
+    int status = sigar_os_proc_list_get(sigar, proclist);
+    if (proclist == sigar->pids && status == SIGAR_OK) {
+        sigar->last_proc_list = time(NULL);
+    }
+    return status;
 }
 
 int sigar_proc_args_create(sigar_proc_args_t *procargs)

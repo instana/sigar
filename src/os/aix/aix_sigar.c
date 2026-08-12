@@ -166,8 +166,9 @@ int sigar_os_open(sigar_t **sigar)
     (*sigar)->pagesize = 0;
     (*sigar)->ticks = sysconf(_SC_CLK_TCK);
     (*sigar)->boot_time = 0;
-    (*sigar)->last_pid = -1;
+    (*sigar)->pinfocache = NULL;
     (*sigar)->pinfo = NULL;
+    (*sigar)->pinfo_entry = NULL;
     (*sigar)->cpuinfo = NULL;
     (*sigar)->cpuinfo_size = 0;
     SIGAR_ZERO(&(*sigar)->swaps);
@@ -208,8 +209,8 @@ int sigar_os_close(sigar_t *sigar)
     if (sigar->kmem > 0) {
         close(sigar->kmem);
     }
-    if (sigar->pinfo) {
-        free(sigar->pinfo);
+    if (sigar->pinfocache) {
+        sigar_cache_destroy(sigar->pinfocache);
     }
     if (sigar->cpuinfo) {
         free(sigar->cpuinfo);
@@ -672,23 +673,73 @@ int sigar_loadavg_get(sigar_t *sigar,
     }
 }
 
+#define PROC_LIST_BATCH 32
+
+typedef struct {
+    time_t fetched;
+    int valid;           /* 1 if info is populated, 0 if getprocs failed */
+    int processor;       /* cached ti_affinity; SIGAR_FIELD_NOTIMPL if getthrds failed */
+    int processor_valid; /* 0 = not yet fetched for this cache lifetime, 1 = fetched */
+    struct procsinfo64 info;
+} pinfo_cache_entry_t;
+
 int sigar_os_proc_list_get(sigar_t *sigar,
                            sigar_proc_list_t *proclist)
 {
     pid_t pid = 0;
-    struct procsinfo info;
+    struct procsinfo64 infos[PROC_LIST_BATCH];
+    time_t now = time(NULL);
+    int num, i;
+
+    /* Lazily initialise pinfocache here too — the batch sweep populates it,
+     * so sigar_getprocs() calls immediately after will be cache hits. */
+    if (sigar->pinfocache == NULL) {
+        sigar->pinfocache = sigar_expired_cache_new(128,
+            (SIGAR_PINFO_CACHE_EXPIRE + 3) * 1000,
+            SIGAR_PINFO_CACHE_EXPIRE * 1000);
+    }
 
     for (;;) {
-        int num = getprocs(&info, sizeof(info),
-                           NULL, 0, &pid, 1);
+        num = getprocs(infos, sizeof(infos[0]),
+                       NULL, 0, &pid, PROC_LIST_BATCH);
 
-        if (num == 0) {
-            break;
+        for (i = 0; i < num; i++) {
+            sigar_cache_entry_t *entry;
+            pinfo_cache_entry_t *pce;
+
+            SIGAR_PROC_LIST_GROW(proclist);
+            proclist->data[proclist->number++] = infos[i].pi_pid;
+
+            /* Prime pinfocache with data we already have from the batch.
+             * Only write if the existing entry is absent or stale — never
+             * overwrite a fresh entry (it may have been fetched more recently
+             * than this batch sweep). */
+            entry = sigar_cache_get(sigar->pinfocache,
+                                    (sigar_uint64_t)infos[i].pi_pid);
+            if (entry->value == NULL) {
+                pce = malloc(sizeof(pinfo_cache_entry_t));
+                if (pce == NULL) {
+                    continue; /* non-fatal: getprocs() will re-fetch on demand */
+                }
+                pce->processor_valid = 0;
+                entry->value = pce;
+            } else {
+                pce = (pinfo_cache_entry_t *)entry->value;
+                /* Skip if still fresh — don't regress a newer fetch. */
+                if ((now - pce->fetched) <= SIGAR_PINFO_CACHE_EXPIRE && pce->valid) {
+                    continue;
+                }
+                pce->processor_valid = 0;
+            }
+
+            pce->fetched = now;
+            pce->valid = 1;
+            pce->info = infos[i];
         }
 
-        SIGAR_PROC_LIST_GROW(proclist);
-
-        proclist->data[proclist->number++] = info.pi_pid;
+        if (num < PROC_LIST_BATCH) {
+            break;
+        }
     }
 
     return SIGAR_OK;
@@ -696,28 +747,60 @@ int sigar_os_proc_list_get(sigar_t *sigar,
 
 static int sigar_getprocs(sigar_t *sigar, sigar_pid_t pid)
 {
-    int status, num;
-    time_t timenow = time(NULL);
+    sigar_cache_entry_t *entry;
+    pinfo_cache_entry_t *pce;
+    int num;
 
-    if (sigar->pinfo == NULL) {
-        sigar->pinfo = malloc(sizeof(*sigar->pinfo));
+    if (sigar->pinfocache == NULL) {
+        sigar->pinfocache = sigar_expired_cache_new(128,
+            (SIGAR_PINFO_CACHE_EXPIRE + 3) * 1000,
+            SIGAR_PINFO_CACHE_EXPIRE * 1000);
     }
 
-    if (sigar->last_pid == pid) {
-        if ((timenow - sigar->last_getprocs) < SIGAR_LAST_PROC_EXPIRE) {
+    /* Run cleanup before capturing any pointer so freed nodes are never
+     * accessed through entry->value or sigar->pinfo. */
+    sigar_perform_cleanup_if_necessary(sigar->pinfocache);
+
+    entry = sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
+    if (entry && entry->value) {
+        pce = (pinfo_cache_entry_t *)entry->value;
+        if ((time(NULL) - pce->fetched) <= SIGAR_PINFO_CACHE_EXPIRE) {
+            if (!pce->valid) {
+                return ESRCH;
+            }
+            sigar->pinfo = &pce->info;
+            sigar->pinfo_entry = pce;
             return SIGAR_OK;
         }
     }
 
-    sigar->last_pid = pid;
-    sigar->last_getprocs = timenow;
+    entry = sigar_cache_get(sigar->pinfocache, (sigar_uint64_t)pid);
+    if (entry->value == NULL) {
+        pinfo_cache_entry_t *newpce = malloc(sizeof(pinfo_cache_entry_t));
+        if (newpce == NULL) {
+            return ENOMEM;
+        }
+        newpce->fetched = 0;
+        newpce->valid = 0;
+        newpce->processor_valid = 0;
+        entry->value = newpce;
+    }
+    pce = (pinfo_cache_entry_t *)entry->value;
 
-    num = getprocs(sigar->pinfo, sizeof(*sigar->pinfo),
+    pce->fetched = time(NULL);
+    pce->valid = 0;
+    pce->processor_valid = 0;
+
+    num = getprocs(&pce->info, sizeof(pce->info),
                    NULL, 0, &pid, 1);
 
     if (num != 1) {
         return ESRCH;
     }
+
+    pce->valid = 1;
+    sigar->pinfo = &pce->info;
+    sigar->pinfo_entry = pce;
 
     return SIGAR_OK;
 }
@@ -811,18 +894,31 @@ int sigar_proc_state_get(sigar_t *sigar, sigar_pid_t pid,
 {
     int status = sigar_getprocs(sigar, pid);
     struct procsinfo64 *pinfo = sigar->pinfo;
-    tid_t tid = 0;
-    struct thrdsinfo64 thrinfo;
+    pinfo_cache_entry_t *pce = (pinfo_cache_entry_t *)sigar->pinfo_entry;
 
     if (status != SIGAR_OK) {
         return status;
     }
 
-    if (getthrds(pid, &thrinfo, sizeof(thrinfo), &tid, 1) == 1) {
-        procstate->processor = thrinfo.ti_affinity;
+    if (sigar->skip_proc_affinity) {
+        procstate->processor = SIGAR_FIELD_NOTIMPL;
+    }
+    else if (pce && pce->processor_valid) {
+        procstate->processor = pce->processor;
     }
     else {
-        procstate->processor = SIGAR_FIELD_NOTIMPL;
+        tid_t tid = 0;
+        struct thrdsinfo64 thrinfo;
+        if (getthrds(pid, &thrinfo, sizeof(thrinfo), &tid, 1) == 1) {
+            procstate->processor = thrinfo.ti_affinity;
+        }
+        else {
+            procstate->processor = SIGAR_FIELD_NOTIMPL;
+        }
+        if (pce) {
+            pce->processor = procstate->processor;
+            pce->processor_valid = 1;
+        }
     }
     
     SIGAR_SSTRCPY(procstate->name, pinfo->pi_comm);
@@ -860,41 +956,50 @@ int sigar_os_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
     char buffer[8192], *ptr, *end;
     struct procsinfo pinfo;
 
+    /* Skip getargs for zombie/idle processes — they have no args.
+     * Use the pinfocache (populated by sigar_getprocs) to avoid the syscall. */
+    if (sigar->pinfocache) {
+        sigar_cache_entry_t *ce =
+            sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
+        if (ce && ce->value) {
+            pinfo_cache_entry_t *pce = (pinfo_cache_entry_t *)ce->value;
+            if (pce->valid &&
+                (time(NULL) - pce->fetched) <= SIGAR_PINFO_CACHE_EXPIRE)
+            {
+                int state = pce->info.pi_state;
+                if (state == SZOMB || state == SIDL) {
+                    return ESRCH;
+                }
+            }
+        }
+    }
+
     pinfo.pi_pid = pid;
 
-    if (getargs(&pinfo, sizeof(pinfo),
-                buffer, sizeof(buffer)) != 0)
-    {
+    if (getargs(&pinfo, sizeof(pinfo), buffer, sizeof(buffer)) != 0) {
         return errno;
     }
 
     /* Ensure buffer is null-terminated to prevent overruns */
     buffer[sizeof(buffer) - 1] = '\0';
-    
+
     ptr = buffer;
     end = buffer + sizeof(buffer);
 
     while (*ptr && ptr < end) {
-        int alen = strlen(ptr)+1;
+        int alen = strlen(ptr) + 1;
         char *arg;
-        
-        /* Prevent buffer overrun */
+
         if (ptr + alen > end) {
             break;
         }
-        
         arg = malloc(alen);
-
         if (arg == NULL) {
-            /* malloc failed - return error, caller will cleanup */
             return ENOMEM;
         }
-
         SIGAR_PROC_ARGS_GROW(procargs);
         memcpy(arg, ptr, alen);
-
         procargs->data[procargs->number++] = arg;
-            
         ptr += alen;
     }
 

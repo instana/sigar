@@ -47,6 +47,7 @@
  */
 #define SIGAR_T_BASE \
    int cpu_list_cores; \
+   int skip_proc_affinity; \
    int log_level; \
    void *log_data; \
    sigar_log_impl_t log_impl; \
@@ -62,6 +63,7 @@
    int ifconf_len; \
    char *self_path; \
    sigar_proc_list_t *pids; \
+   time_t last_proc_list; \
    sigar_cache_t *fsdev; \
    sigar_cache_t *proc_cpu; \
    sigar_cache_t *net_listen; \
