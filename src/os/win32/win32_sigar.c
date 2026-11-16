@@ -569,7 +569,9 @@ int sigar_os_open(sigar_t **sigar_ptr)
     sigar->netif_addr_rows = NULL;
     sigar->netif_adapters = NULL;
     sigar->netif_names = NULL;
-    sigar->pinfo.pid = -1;
+    sigar->pinfocache = NULL;
+    sigar->pinfo = NULL;
+    sigar->pinfo_snapshot = 0;
     sigar->ws_version = 0;
     sigar->lcpu = -1;
 
@@ -621,6 +623,10 @@ int sigar_os_close(sigar_t *sigar)
 
     if (sigar->netif_names) {
         sigar_cache_destroy(sigar->netif_names);
+    }
+
+    if (sigar->pinfocache) {
+        sigar_cache_destroy(sigar->pinfocache);
     }
 
     free(sigar);
@@ -1053,62 +1059,13 @@ SIGAR_DECLARE(int) sigar_loadavg_get(sigar_t *sigar,
 #define get_process_object(sigar, err) \
     get_perf_object(sigar, PERF_TITLE_PROC_KEY, err)
 
+static int refresh_proc_info(sigar_t *sigar, sigar_proc_list_t *proclist);
+
+/* fallback when EnumProcesses is unavailable; also primes pinfocache */
 static int sigar_proc_list_get_perf(sigar_t *sigar,
                                     sigar_proc_list_t *proclist)
 {
-
-    PERF_OBJECT_TYPE *object;
-    PERF_INSTANCE_DEFINITION *inst;
-    PERF_COUNTER_DEFINITION *counter;
-    DWORD i, err;
-    DWORD perf_offsets[PERF_IX_MAX];
-
-    perf_offsets[PERF_IX_PID] = 0;
-
-    object = get_process_object(sigar, &err);
-
-    if (!object) {
-        return err;
-    }
-
-    /*
-     * note we assume here:
-     *  block->NumObjectTypes == 1
-     *  object->ObjectNameTitleIndex == PERF_TITLE_PROC
-     *
-     * which should always be the case.
-     */
-
-    for (i=0, counter = PdhFirstCounter(object);
-         i<object->NumCounters;
-         i++, counter = PdhNextCounter(counter))
-    {
-        DWORD offset = counter->CounterOffset;
-
-        switch (counter->CounterNameTitleIndex) {
-          case PERF_TITLE_PID:
-            perf_offsets[PERF_IX_PID] = offset;
-            break;
-        }
-    }
-
-    for (i=0, inst = PdhFirstInstance(object);
-         i<object->NumInstances;
-         i++, inst = PdhNextInstance(inst))
-    {
-        PERF_COUNTER_BLOCK *counter_block = PdhGetCounterBlock(inst);
-        DWORD pid = PERF_VAL(PERF_IX_PID);
-
-        if (pid == 0) {
-            continue; /* dont include the system Idle process */
-        }
-
-        SIGAR_PROC_LIST_GROW(proclist);
-
-        proclist->data[proclist->number++] = pid;
-    }
-
-    return SIGAR_OK;
+    return refresh_proc_info(sigar, proclist);
 }
 
 #define sigar_EnumProcesses \
@@ -1175,11 +1132,12 @@ SIGAR_DECLARE(int) sigar_proc_mem_get(sigar_t *sigar, sigar_pid_t pid,
                                       sigar_proc_mem_t *procmem)
 {
     int status = get_proc_info(sigar, pid);
-    sigar_win32_pinfo_t *pinfo = &sigar->pinfo;
+    sigar_win32_pinfo_t *pinfo;
 
     if (status != SIGAR_OK) {
         return status;
     }
+    pinfo = sigar->pinfo;
 
     procmem->size     = pinfo->size;     /* "Virtual Bytes" */
     procmem->resident = pinfo->resident; /* "Working Set" */
@@ -1195,11 +1153,12 @@ SIGAR_DECLARE(int) sigar_proc_cumulative_disk_io_get(sigar_t *sigar, sigar_pid_t
                                           sigar_proc_cumulative_disk_io_t *proc_cumulative_disk_io)
 {
     int status = get_proc_info(sigar, pid);
-    sigar_win32_pinfo_t *pinfo = &sigar->pinfo;
+    sigar_win32_pinfo_t *pinfo;
 
     if (status != SIGAR_OK) {
         return status;
     }
+    pinfo = sigar->pinfo;
 
     proc_cumulative_disk_io->bytes_read = pinfo->bytes_read;
     proc_cumulative_disk_io->bytes_written = pinfo->bytes_written;
@@ -1349,11 +1308,12 @@ SIGAR_DECLARE(int) sigar_proc_state_get(sigar_t *sigar, sigar_pid_t pid,
 					sigar_proc_state_t *procstate)
 {
     int status = get_proc_info(sigar, pid);
-    sigar_win32_pinfo_t *pinfo = &sigar->pinfo;
+    sigar_win32_pinfo_t *pinfo;
 
     if (status != SIGAR_OK) {
         return status;
     }
+    pinfo = sigar->pinfo;
 
     memcpy(procstate->name, pinfo->name, sizeof(procstate->name));
     procstate->state = pinfo->state;
@@ -1367,21 +1327,20 @@ SIGAR_DECLARE(int) sigar_proc_state_get(sigar_t *sigar, sigar_pid_t pid,
     return SIGAR_OK;
 }
 
-static int get_proc_info(sigar_t *sigar, sigar_pid_t pid)
+/*
+ * Read the perf "Process" object once and cache every process instance
+ * in sigar->pinfocache.  If proclist is non-NULL, pids (except 0, the
+ * Idle process) are appended to it.
+ */
+static int refresh_proc_info(sigar_t *sigar, sigar_proc_list_t *proclist)
 {
     PERF_OBJECT_TYPE *object;
     PERF_INSTANCE_DEFINITION *inst;
     PERF_COUNTER_DEFINITION *counter;
     DWORD i, err;
     DWORD perf_offsets[PERF_IX_MAX];
-    sigar_win32_pinfo_t *pinfo = &sigar->pinfo;
     time_t timenow = time(NULL);
-
-    if (pinfo->pid == pid) {
-        if ((timenow - pinfo->mtime) < SIGAR_LAST_PROC_EXPIRE) {
-            return SIGAR_OK;
-        }
-    }
+    int seen_pid0 = 0;
 
     memset(&perf_offsets, 0, sizeof(perf_offsets));
 
@@ -1391,8 +1350,13 @@ static int get_proc_info(sigar_t *sigar, sigar_pid_t pid)
         return err;
     }
 
-    pinfo->pid = pid;
-    pinfo->mtime = timenow;
+    if (sigar->pinfocache == NULL) {
+        sigar->pinfocache = sigar_expired_cache_new(128,
+            (SIGAR_PINFO_CACHE_EXPIRE + 3) * 1000,
+            SIGAR_PINFO_CACHE_EXPIRE * 1000);
+    }
+
+    sigar->pinfo_snapshot = timenow;
 
     /*
      * note we assume here:
@@ -1454,11 +1418,32 @@ static int get_proc_info(sigar_t *sigar, sigar_pid_t pid)
     {
         PERF_COUNTER_BLOCK *counter_block = PdhGetCounterBlock(inst);
         sigar_pid_t this_pid = PERF_VAL(PERF_IX_PID);
+        sigar_cache_entry_t *entry;
+        sigar_win32_pinfo_t *pinfo;
 
-        if (this_pid != pid) {
-            continue;
+        if (this_pid == 0) {
+            /* Idle comes before _Total; keep the first, as before */
+            if (seen_pid0) {
+                continue;
+            }
+            seen_pid0 = 1;
+        }
+        else if (proclist) {
+            SIGAR_PROC_LIST_GROW(proclist);
+            proclist->data[proclist->number++] = this_pid;
         }
 
+        entry = sigar_cache_get(sigar->pinfocache, (sigar_uint64_t)this_pid);
+        if (entry->value == NULL) {
+            entry->value = malloc(sizeof(*pinfo));
+            if (entry->value == NULL) {
+                continue; /* non-fatal: next lookup misses and fails */
+            }
+        }
+        pinfo = (sigar_win32_pinfo_t *)entry->value;
+
+        pinfo->pid = this_pid;
+        pinfo->mtime = timenow;
         pinfo->state = 'R'; /* XXX? */
         SIGAR_W2A(PdhInstanceName(inst),
                   pinfo->name, sizeof(pinfo->name));
@@ -1470,13 +1455,51 @@ static int get_proc_info(sigar_t *sigar, sigar_pid_t pid)
         pinfo->handles  = PERF_VAL(PERF_IX_HANDLE_CNT);
         pinfo->threads  = PERF_VAL(PERF_IX_THREAD_CNT);
         pinfo->page_faults = PERF_VAL(PERF_IX_PAGE_FAULTS);
-		pinfo->bytes_read = PERF_VAL(PERF_IX_IO_READ_BYTES_SEC);
-		pinfo->bytes_written = PERF_VAL(PERF_IX_IO_WRITE_BYTES_SEC);
-
-        return SIGAR_OK;
+        pinfo->bytes_read = PERF_VAL(PERF_IX_IO_READ_BYTES_SEC);
+        pinfo->bytes_written = PERF_VAL(PERF_IX_IO_WRITE_BYTES_SEC);
     }
 
-    return SIGAR_NO_SUCH_PROCESS;
+    return SIGAR_OK;
+}
+
+static int get_proc_info(sigar_t *sigar, sigar_pid_t pid)
+{
+    int refreshed = 0;
+    int status;
+
+    if (sigar->pinfocache == NULL ||
+        (time(NULL) - sigar->pinfo_snapshot) >= SIGAR_PINFO_CACHE_EXPIRE)
+    {
+        if ((status = refresh_proc_info(sigar, NULL)) != SIGAR_OK) {
+            return status;
+        }
+        refreshed = 1;
+    }
+
+    for (;;) {
+        sigar_cache_entry_t *entry;
+
+        /* cleanup before taking any entry pointer */
+        sigar_perform_cleanup_if_necessary(sigar->pinfocache);
+
+        entry = sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
+        if (entry && entry->value &&
+            ((sigar_win32_pinfo_t *)entry->value)->mtime == sigar->pinfo_snapshot)
+        {
+            sigar->pinfo = (sigar_win32_pinfo_t *)entry->value;
+            return SIGAR_OK;
+        }
+
+        if (refreshed) {
+            return SIGAR_NO_SUCH_PROCESS;
+        }
+
+        /* pid not in snapshot; it may have started since */
+        if ((status = refresh_proc_info(sigar, NULL)) != SIGAR_OK) {
+            return status;
+        }
+        refreshed = 1;
+    }
 }
 
 static int sigar_remote_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
@@ -1644,14 +1667,13 @@ SIGAR_DECLARE(int) sigar_proc_fd_get(sigar_t *sigar, sigar_pid_t pid,
                                      sigar_proc_fd_t *procfd)
 {
     int status;
-    sigar_win32_pinfo_t *pinfo = &sigar->pinfo;
 
-    pinfo->pid = -1; /* force update */
+    sigar->pinfo_snapshot = 0; /* force update */
     if ((status = get_proc_info(sigar, pid)) != SIGAR_OK) {
         return status;
     }
 
-    procfd->total = pinfo->handles;
+    procfd->total = sigar->pinfo->handles;
 
     return SIGAR_OK;
 }

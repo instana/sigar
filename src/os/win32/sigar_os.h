@@ -322,6 +322,9 @@ typedef struct {
 	sigar_uint64_t bytes_written;
 } sigar_win32_pinfo_t;
 
+/* seconds a perf snapshot in pinfocache is considered fresh */
+#define SIGAR_PINFO_CACHE_EXPIRE 5
+
 typedef struct {
     const char *name;
     HINSTANCE handle;
@@ -560,7 +563,9 @@ struct sigar_t {
     sigar_winsta_t winsta;
     sigar_kernel_t kernel;
     sigar_mpr_t mpr;
-    sigar_win32_pinfo_t pinfo;
+    sigar_cache_t *pinfocache; /* pid -> sigar_win32_pinfo_t */
+    sigar_win32_pinfo_t *pinfo; /* last entry returned by get_proc_info */
+    time_t pinfo_snapshot; /* time of last perf data read into pinfocache */
     sigar_cache_t *netif_adapters;
     sigar_cache_t *netif_mib_rows;
     sigar_cache_t *netif_addr_rows;
