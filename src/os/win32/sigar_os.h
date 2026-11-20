@@ -310,7 +310,7 @@ typedef struct {
     sigar_pid_t pid;
     int ppid;
     int priority;
-    time_t mtime;
+    unsigned long generation; /* refresh that last wrote this entry */
     sigar_uint64_t size;
     sigar_uint64_t resident;
     char name[SIGAR_PROC_NAME_LEN];
@@ -321,6 +321,13 @@ typedef struct {
 	sigar_uint64_t bytes_read;
 	sigar_uint64_t bytes_written;
 } sigar_win32_pinfo_t;
+
+/* seconds a perf snapshot in pinfocache is considered fresh */
+#define SIGAR_PINFO_CACHE_EXPIRE 5
+
+/* a snapshot younger than this (ms) is never re-read on a pid miss or
+ * by sigar_proc_fd_get */
+#define SIGAR_PINFO_MIN_REFRESH_MS 1000
 
 typedef struct {
     const char *name;
@@ -560,7 +567,10 @@ struct sigar_t {
     sigar_winsta_t winsta;
     sigar_kernel_t kernel;
     sigar_mpr_t mpr;
-    sigar_win32_pinfo_t pinfo;
+    sigar_cache_t *pinfocache; /* pid -> sigar_win32_pinfo_t */
+    sigar_win32_pinfo_t *pinfo; /* last entry returned by get_proc_info */
+    DWORD pinfo_tick; /* GetTickCount() of last perf read into pinfocache */
+    unsigned long pinfo_generation; /* incremented on every perf read */
     sigar_cache_t *netif_adapters;
     sigar_cache_t *netif_mib_rows;
     sigar_cache_t *netif_addr_rows;
