@@ -24,9 +24,12 @@
 #include <comdef.h>
 #include <wbemidl.h>
 #include "sigar.h"
-#include "sigar_os.h"
 
 #pragma comment(lib, "wbemuuid.lib")
+
+#ifndef SIGAR_CMDLINE_MAX
+#define SIGAR_CMDLINE_MAX 32768
+#endif
 
 class WMI {
 
