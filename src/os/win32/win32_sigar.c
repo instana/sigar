@@ -1530,6 +1530,43 @@ static int get_proc_info(sigar_t *sigar, sigar_pid_t pid, int force)
     return pinfo_lookup(sigar, pid);
 }
 
+#ifndef PROCESS_QUERY_LIMITED_INFORMATION
+#define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
+#endif
+
+/*
+ * Args cannot be read for protected/kernel processes (System, smss, ...),
+ * even as SYSTEM with SeDebugPrivilege.  Callers use proc_args_get to check
+ * that a pid is running, so for those report the process as running with
+ * no args instead of paying for a WMI query that cannot succeed.
+ *
+ * Returns SIGAR_OK (running), SIGAR_NO_SUCH_PROCESS, or other error
+ * if existence could not be determined.
+ */
+static int sigar_proc_running_check(sigar_pid_t pid)
+{
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0,
+                              (DWORD)pid);
+    DWORD err, wait;
+
+    if (!proc) {
+        err = GetLastError();
+        if (err == ERROR_ACCESS_DENIED) {
+            return SIGAR_OK; /* exists, we are just not allowed to open it */
+        }
+        if (err == ERROR_INVALID_PARAMETER) {
+            return SIGAR_NO_SUCH_PROCESS;
+        }
+        return err;
+    }
+
+    /* a handle can outlive its process; signaled means it has exited */
+    wait = WaitForSingleObject(proc, 0);
+    CloseHandle(proc);
+
+    return (wait == WAIT_TIMEOUT) ? SIGAR_OK : SIGAR_NO_SUCH_PROCESS;
+}
+
 static int sigar_remote_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
                                       sigar_proc_args_t *procargs)
 {
@@ -1545,12 +1582,24 @@ static int sigar_remote_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
         if (status == SIGAR_OK) {
             return status;
         }
+
+        if (status != ERROR_DATATYPE_MISMATCH && status != SIGAR_ENOTIMPL) {
+            /* args unreadable (protected process etc), WMI will not help */
+            return sigar_proc_running_check(pid);
+        }
+    }
+    else if (pid != 0) {
+        /* access denied or no such pid: neither is fixed by WMI */
+        return sigar_proc_running_check(pid);
     }
 
     /* likely we are 32-bit, pid process is 64-bit */
     status = sigar_proc_args_wmi_get(sigar, pid, procargs);
     if (status == ERROR_NOT_FOUND) {
         status = SIGAR_NO_SUCH_PROCESS;
+    }
+    else if (status != SIGAR_OK) {
+        status = sigar_proc_running_check(pid);
     }
     return status;
 }
