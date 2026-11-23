@@ -1545,8 +1545,9 @@ static int get_proc_info(sigar_t *sigar, sigar_pid_t pid, int force)
  */
 static int sigar_proc_running_check(sigar_pid_t pid)
 {
-    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0,
-                              (DWORD)pid);
+    /* SYNCHRONIZE is required for WaitForSingleObject below */
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|SYNCHRONIZE,
+                              0, (DWORD)pid);
     DWORD err, wait;
 
     if (!proc) {
@@ -1560,11 +1561,12 @@ static int sigar_proc_running_check(sigar_pid_t pid)
         return err;
     }
 
-    /* a handle can outlive its process; signaled means it has exited */
+    /* a handle can outlive its process; only signaled means it has exited,
+     * anything else (timeout, wait failure) is treated as running */
     wait = WaitForSingleObject(proc, 0);
     CloseHandle(proc);
 
-    return (wait == WAIT_TIMEOUT) ? SIGAR_OK : SIGAR_NO_SUCH_PROCESS;
+    return (wait == WAIT_OBJECT_0) ? SIGAR_NO_SUCH_PROCESS : SIGAR_OK;
 }
 
 static int sigar_remote_proc_args_get(sigar_t *sigar, sigar_pid_t pid,
