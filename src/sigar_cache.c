@@ -112,63 +112,61 @@ static void sigar_cache_rehash(sigar_cache_t *table)
 #define SIGAR_CACHE_IX(t, k) \
     t->entries + (k % t->size)
 
-void sigar_perform_cleanup_if_necessary(sigar_cache_t *table) { 
-    sigar_uint64_t current_time;
-	int i;
-	sigar_cache_entry_t **entries;
-    if (table->cleanup_period_millis == SIGAR_FIELD_NOTIMPL) {
-		/* no cleanup for this cache) */
-		return;
-    }
-    current_time = sigar_time_now_millis();
-    if ((current_time - table->last_cleanup_time) < table->cleanup_period_millis) {
-        /* not enough time has passed since last cleanup */
-        return;
-    }	
+void sigar_cache_prune(sigar_cache_t *table,
+                       int (*remove_if)(const sigar_cache_entry_t *, void *),
+                       void *data)
+{
+    unsigned int i;
 
-    /* performing cleanup */    
-    entries = table->entries;
-
-    table->last_cleanup_time = current_time;
-    
     for (i=0; i<table->size; i++) {
-        sigar_cache_entry_t *entry, *ptr, *entry_prev=NULL, **entry_in_table;
-        entry_in_table = entries;
-        entry = *entries++;
-
-        while (entry) {
-			sigar_uint64_t period_with_no_access = current_time - entry->last_access_time;
-            ptr = entry->next;            
-            if (table->entry_expire_period < period_with_no_access) {
-		       /* no one acess this entry for too long - we can delete it */
-	           if (entry->value) {
-                   table->free_value(entry->value);
-                } 
-                free(entry);
-		        table->count--;
-                if (entry_prev != NULL) {
-                   entry_prev->next = ptr;
+        sigar_cache_entry_t **link = &table->entries[i];
+        while (*link) {
+            sigar_cache_entry_t *entry = *link;
+            if (remove_if(entry, data)) {
+                *link = entry->next;
+                if (entry->value) {
+                    table->free_value(entry->value);
                 }
-                else {
-                   /* removing first entry - head of list should point to next entry */               
-                   *entry_in_table = ptr;
-                } 
+                free(entry);
+                table->count--;
             }
             else {
-              /* entry not expired - advance entry_prev to current entry*/
-              entry_prev = entry;
-	        }
-            entry = ptr;
+                link = &entry->next;
+            }
         }
     }
     if (table->count < (table->size/4)) {
-	/* hash table (the array size) too big for the amount of values it contains perform rehash */
         sigar_cache_rehash(table);
     }
 }
 
-   
+typedef struct {
+    sigar_uint64_t now;
+    sigar_uint64_t expire_period;
+} sigar_cache_expiry_t;
 
+static int cache_entry_expired(const sigar_cache_entry_t *entry, void *data)
+{
+    const sigar_cache_expiry_t *expiry = data;
+    return expiry->expire_period < expiry->now - entry->last_access_time;
+}
+
+void sigar_perform_cleanup_if_necessary(sigar_cache_t *table)
+{
+    sigar_cache_expiry_t expiry;
+
+    if (table->cleanup_period_millis == SIGAR_FIELD_NOTIMPL) {
+        return;
+    }
+    expiry.now = sigar_time_now_millis();
+    if ((expiry.now - table->last_cleanup_time) < table->cleanup_period_millis) {
+        return;
+    }
+
+    table->last_cleanup_time = expiry.now;
+    expiry.expire_period = table->entry_expire_period;
+    sigar_cache_prune(table, cache_entry_expired, &expiry);
+}
 
 sigar_cache_entry_t *sigar_cache_find(sigar_cache_t *table,
                                       sigar_uint64_t key)
