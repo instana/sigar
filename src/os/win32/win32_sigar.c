@@ -1329,6 +1329,14 @@ SIGAR_DECLARE(int) sigar_proc_state_get(sigar_t *sigar, sigar_pid_t pid,
     return SIGAR_OK;
 }
 
+static int pinfo_is_stale(const sigar_cache_entry_t *entry, void *data)
+{
+    const sigar_win32_pinfo_t *pinfo = entry->value;
+    const unsigned long *generation = data;
+
+    return pinfo == NULL || pinfo->generation != *generation;
+}
+
 /*
  * Read the perf "Process" object once and cache every process instance
  * in sigar->pinfocache.  If proclist is non-NULL, pids (except 0, the
@@ -1352,9 +1360,8 @@ static int refresh_proc_info(sigar_t *sigar, sigar_proc_list_t *proclist)
     }
 
     if (sigar->pinfocache == NULL) {
-        sigar->pinfocache = sigar_expired_cache_new(128,
-            (SIGAR_PINFO_CACHE_EXPIRE + 3) * 1000,
-            SIGAR_PINFO_CACHE_EXPIRE * 1000);
+        /* Snapshot freshness is controlled by GetTickCount, not wall time. */
+        sigar->pinfocache = sigar_cache_new(128);
         if (sigar->pinfocache == NULL) {
             return ERROR_NOT_ENOUGH_MEMORY;
         }
@@ -1465,15 +1472,16 @@ static int refresh_proc_info(sigar_t *sigar, sigar_proc_list_t *proclist)
 		pinfo->bytes_written = PERF_VAL(PERF_IX_IO_WRITE_BYTES_SEC);
     }
 
+    /* Remove entries missing from this snapshot, regardless of last access. */
+    sigar_cache_prune(sigar->pinfocache, pinfo_is_stale,
+                      &sigar->pinfo_generation);
+
     return SIGAR_OK;
 }
 
 static int pinfo_lookup(sigar_t *sigar, sigar_pid_t pid)
 {
     sigar_cache_entry_t *entry;
-
-    /* cleanup before taking any entry pointer */
-    sigar_perform_cleanup_if_necessary(sigar->pinfocache);
 
     entry = sigar_cache_find(sigar->pinfocache, (sigar_uint64_t)pid);
     if (entry && entry->value &&
